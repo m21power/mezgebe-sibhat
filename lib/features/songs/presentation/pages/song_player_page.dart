@@ -271,7 +271,7 @@ class _SongPlayerPageState extends State<SongPlayerPage> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: theme.primaryColor,
+                    color: theme.iconTheme.color,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
