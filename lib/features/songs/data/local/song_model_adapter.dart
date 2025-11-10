@@ -7,6 +7,7 @@ class SongModelAdapter extends TypeAdapter<SongModel> {
 
   @override
   SongModel read(BinaryReader reader) {
+    final id = reader.readString(); // <-- new
     final name = reader.readString();
     final url = reader.readString();
     final isAudio = reader.readBool();
@@ -19,6 +20,7 @@ class SongModelAdapter extends TypeAdapter<SongModel> {
       children.add(read(reader));
     }
     return SongModel(
+      id: id, // <-- new
       name: name,
       url: url.isEmpty ? null : url,
       isAudio: isAudio,
@@ -31,6 +33,7 @@ class SongModelAdapter extends TypeAdapter<SongModel> {
 
   @override
   void write(BinaryWriter writer, SongModel obj) {
+    writer.writeString(obj.id); // <-- new
     writer.writeString(obj.name);
     writer.writeString(obj.url ?? '');
     writer.writeBool(obj.isAudio);

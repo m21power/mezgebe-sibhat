@@ -28,7 +28,8 @@ class MyApp extends StatelessWidget {
         BlocProvider(
           create: (_) => sl<SongBloc>()
             ..add(GetCurrentThemeEvent())
-            ..add(LoadSongsEvent()),
+            ..add(LoadSongsEvent())
+            ..add(CheckConnection()),
         ),
       ],
       child: BlocBuilder<SongBloc, SongState>(

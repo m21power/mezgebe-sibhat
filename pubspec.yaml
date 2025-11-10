@@ -32,6 +32,10 @@ dependencies:
   http: ^1.5.0
   shared_preferences: ^2.5.3
   get_it: ^9.0.5
+  image_picker: ^1.2.0
+  connectivity_plus: ^6.1.5
+  internet_connection_checker: ^3.0.1
+  dartz: ^0.10.1
 
 dev_dependencies:
   flutter_test:

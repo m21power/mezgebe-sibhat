@@ -109,7 +109,7 @@ class _HomePageState extends State<HomePage> {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const SongPlayerPage()),
+            MaterialPageRoute(builder: (_) => SongPlayerPage(song: song)),
           );
         },
         child: Container(
@@ -148,7 +148,7 @@ class _HomePageState extends State<HomePage> {
             } else {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const SongPlayerPage()),
+                MaterialPageRoute(builder: (_) => SongPlayerPage(song: song)),
               );
             }
           },

@@ -1,4 +1,7 @@
+import 'package:wereb/features/songs/data/local/song_model.dart';
+
 class Songmodel {
+  final String id;
   final String name;
   final String? url;
   final bool isAudio;
@@ -8,6 +11,7 @@ class Songmodel {
   String? localPath;
 
   Songmodel({
+    required this.id,
     required this.name,
     this.url,
     this.isAudio = false,
@@ -19,6 +23,7 @@ class Songmodel {
 
   factory Songmodel.fromJson(Map<String, dynamic> json) {
     return Songmodel(
+      id: json["id"],
       name: json['name'],
       url: json['url'],
       isAudio: json['isAudio'] ?? false,
@@ -35,6 +40,7 @@ class Songmodel {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'name': name,
       'url': url,
       'isAudio': isAudio,
@@ -44,4 +50,10 @@ class Songmodel {
       'localPath': localPath,
     };
   }
+}
+
+class DownloadAudioReport {
+  final double progress;
+  final SongModel songModel;
+  DownloadAudioReport({required this.progress, required this.songModel});
 }
