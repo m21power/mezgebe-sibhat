@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -19,6 +20,20 @@ class _AboutPageState extends State<AboutPage> {
   final ImagePicker _picker = ImagePicker();
 
   File? _selectedImage;
+  String appVersion = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initPackageInfo();
+  }
+
+  Future<void> _initPackageInfo() async {
+    final info = await PackageInfo.fromPlatform();
+    setState(() {
+      appVersion = info.version;
+    });
+  }
 
   Future<void> _pickImage() async {
     final XFile? image = await _picker.pickImage(
@@ -152,7 +167,7 @@ class _AboutPageState extends State<AboutPage> {
                           "All glory belongs to God Almighty, who inspired and guided this work.\n\n"
                           "We extend gratitude to all fathers, monks, scholars, deacons, and faithful servants "
                           "who preserved the sacred hymns and teachings through generations.\n\n"
-                          "Version 1.0.0\n© 2025 Mezgebe Sibhat",
+                          "Version $appVersion\n© 2025 Mezgebe Sibhat",
                           textAlign: TextAlign.justify,
                           style: theme.textTheme.bodyLarge?.copyWith(
                             height: 1.7,
