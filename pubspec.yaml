@@ -26,6 +26,7 @@ dependencies:
   flutter_dotenv: ^6.0.0
   flutter_launcher_icons: ^0.14.4
   package_info_plus: ^9.0.0
+  gif: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -38,9 +39,8 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  adaptive_icon_background: "assets/icon.png"
-  adaptive_icon_foreground: "assets/icon.png"
-  image_path: "assets/icon.png"
+  # adaptive_icon_background: "#FFFFFF"
+  image_path: "assets/icon2.png"
 
 flutter:
   uses-material-design: true

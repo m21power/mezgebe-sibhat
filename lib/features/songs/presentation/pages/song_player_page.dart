@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:gif/gif.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/song_model.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
@@ -16,7 +17,8 @@ class SongPlayerPage extends StatefulWidget {
   State<SongPlayerPage> createState() => _SongPlayerPageState();
 }
 
-class _SongPlayerPageState extends State<SongPlayerPage> {
+class _SongPlayerPageState extends State<SongPlayerPage>
+    with SingleTickerProviderStateMixin {
   double progress = 0.0;
   double playbackSpeed = 1.0;
   Duration currentPosition = Duration.zero;
@@ -25,6 +27,7 @@ class _SongPlayerPageState extends State<SongPlayerPage> {
   int currentIndex = 0;
   double downloadProgress = 0;
   late AudioPlayer _audioPlayer;
+  late GifController _controller;
 
   late StreamSubscription<PlayerState> _playerStateSub;
   late StreamSubscription<Duration> _positionSub;
@@ -60,7 +63,7 @@ class _SongPlayerPageState extends State<SongPlayerPage> {
     super.initState();
     songModel = widget.song;
     _audioPlayer = AudioPlayer();
-
+    _controller = GifController(vsync: this);
     // Listen for total duration
     _audioPlayer.durationStream.listen((d) {
       if (d != null) {
@@ -94,6 +97,7 @@ class _SongPlayerPageState extends State<SongPlayerPage> {
 
   @override
   void dispose() {
+    _controller.dispose();
     _playerStateSub.cancel();
     _positionSub.cancel();
     _audioPlayer.dispose();
@@ -135,6 +139,13 @@ class _SongPlayerPageState extends State<SongPlayerPage> {
 
   // ---- FIXED: Switching between songs ----
   Future<void> playSongAtIndex(int index) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _controller.reset();
+        _controller.forward();
+      }
+    });
+
     if (index < 0 || index >= songModel!.children.length) return;
     if (!mounted) return;
     setState(() {
@@ -654,19 +665,36 @@ class _SongPlayerPageState extends State<SongPlayerPage> {
                                 fit: BoxFit.contain,
                                 width: double.infinity,
                               )
-                            : Image.asset(
-                                "assets/kidus_yared.png",
-                                fit: BoxFit.contain,
-                                width: double.infinity,
-                              ),
+                            // : Image.asset(
+                            //     "assets/kidus_yared.png",
+                            //     fit: BoxFit.contain,
+                            //     width: double.infinity,
+                            //   ),
+                            : Center(
+                                child: Gif(
+                                  image: AssetImage(
+                                    "assets/${songState.isLightTheme ? 'light_theme.gif' : 'dark_theme.gif'}",
+                                  ),
+                                  controller:
+                                      _controller, // if duration and fps is null, original gif fps will be used.
+                                  //fps: 30,
+                                  //duration: const Duration(seconds: 3),
+                                  autostart: Autostart.no,
+                                  placeholder: (context) =>
+                                      const Text('Loading...'),
+                                  onFetchCompleted: () {
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            _controller.reset();
+                                            _controller.forward();
+                                          }
+                                        });
+                                  },
 
-                        /*
-                        Image.asset(
-                          "assets/kidus_yared.png",
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                        ),
-                        */
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
                       ),
                     );
                   },
