@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/song_model.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/about_page.dart';
+import 'package:mezgebe_sibhat/features/songs/presentation/pages/donation_card.dart';
 import 'package:mezgebe_sibhat/theme/theme.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/song_player_page.dart';
 
@@ -30,6 +32,45 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _checkForUpdate() async {
+    try {
+      final updateInfo = await InAppUpdate.checkForUpdate();
+
+      if (updateInfo.updateAvailability == UpdateAvailability.updateAvailable &&
+          updateInfo.flexibleUpdateAllowed) {
+        await InAppUpdate.startFlexibleUpdate();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              '🎉 Update downloaded! Restart the app to apply it.',
+            ),
+            action: SnackBarAction(
+              label: 'Restart',
+              onPressed: () async {
+                // Complete the update
+                await InAppUpdate.completeFlexibleUpdate();
+              },
+            ),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Update check failed: $e');
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _checkForUpdate();
+  }
+
   @override
   Widget build(BuildContext context) {
     final songState = context.watch<SongBloc>().state;
@@ -37,74 +78,83 @@ class _HomePageState extends State<HomePage> {
 
     return Theme(
       data: songState.isLightTheme ? AppThemes.lightTheme : AppThemes.darkTheme,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text("መዝገበ ስብሐት"),
-          centerTitle: true,
-          actions: [
-            PopupMenuButton<String>(
-              color: isDarkMode ? Colors.grey[900] : Colors.white,
-              onSelected: (value) {
-                if (value == 'about') {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => AboutPage()),
+      child: SafeArea(
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text("መዝገበ ስብሐት"),
+            centerTitle: true,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.favorite, color: Colors.red),
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const DonationSheet(),
                   );
-                } else if (value == 'theme') {
-                  context.read<SongBloc>().add(
-                    ChangeThemeEvent(isDarkMode ? 'light' : 'dark'),
-                  );
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'theme',
-                  child: ListTile(
-                    leading: Icon(
-                      isDarkMode ? Icons.wb_sunny : Icons.nightlight_round,
-                    ),
-                    title: Text(
-                      isDarkMode
-                          ? 'Switch to Light Mode'
-                          : 'Switch to Dark Mode',
-                    ),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'about',
-                  child: ListTile(
-                    leading: Icon(Icons.info_outline),
-                    title: Text('About'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        body: BlocConsumer<SongBloc, SongState>(
-          listener: (context, songState) {
-            // TODO: implement listener
-          },
-          builder: (context, songState) {
-            return Center(
-              child: Align(
-                alignment: Alignment.centerLeft, // start from left
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: songState.songs.length,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 20,
-                    horizontal: 40,
-                  ),
-                  itemBuilder: (context, index) {
-                    final song = songState.songs[index];
-
-                    return buildSongItem(song);
-                  },
-                ),
+                },
               ),
-            );
-          },
+              PopupMenuButton<String>(
+                color: isDarkMode ? Colors.grey[900] : Colors.white,
+                onSelected: (value) {
+                  if (value == 'about') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AboutPage()),
+                    );
+                  } else if (value == 'theme') {
+                    context.read<SongBloc>().add(
+                      ChangeThemeEvent(isDarkMode ? 'light' : 'dark'),
+                    );
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'theme',
+                    child: ListTile(
+                      leading: Icon(
+                        isDarkMode ? Icons.wb_sunny : Icons.nightlight_round,
+                      ),
+                      title: Text('Theme'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'about',
+                    child: ListTile(
+                      leading: Icon(Icons.info_outline),
+                      title: Text('About'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          body: BlocConsumer<SongBloc, SongState>(
+            listener: (context, songState) {
+              // TODO: implement listener
+            },
+            builder: (context, songState) {
+              return Center(
+                child: Align(
+                  alignment: Alignment.centerLeft, // start from left
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: songState.songs.length,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 20,
+                      horizontal: 40,
+                    ),
+                    itemBuilder: (context, index) {
+                      final song = songState.songs[index];
+
+                      return buildSongItem(song);
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );

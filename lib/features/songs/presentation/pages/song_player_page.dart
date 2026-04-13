@@ -194,11 +194,18 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-
-      body: SafeArea(
-        child: BlocConsumer<SongBloc, SongState>(
+    return SafeArea(
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.song.name, overflow: TextOverflow.ellipsis),
+          centerTitle: true,
+          leading: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(Icons.arrow_back),
+          ),
+        ),
+        // backgroundColor: theme.scaffoldBackgroundColor,
+        body: BlocConsumer<SongBloc, SongState>(
           listener: (context, songState) {
             if (songState is AudioDownloadingFetchingState) {
               print("Progress:${songState.progress}");
@@ -234,37 +241,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           builder: (context, songState) {
             return Column(
               children: [
-                // Top bar
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.arrow_back_ios_new,
-                          color: theme.iconTheme.color,
-                        ),
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                      ),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            overflow: TextOverflow.ellipsis,
-                            songModel!.name,
-                            style: textTheme.titleLarge,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 40),
-                    ],
-                  ),
-                ),
-
                 // Album Art Scrollable
                 imageWidget(theme, songModel!.name, songState, context),
                 const SizedBox(height: 20),

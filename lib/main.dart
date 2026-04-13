@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
           final isLight = state.isLightTheme; // from your bloc’s state
           return MaterialApp(
             debugShowCheckedModeBanner: false,
-            title: 'EOTC',
+            title: 'Mezgebe Sibhat',
             theme: AppThemes.lightTheme,
             darkTheme: AppThemes.darkTheme,
             themeMode: isLight ? ThemeMode.light : ThemeMode.dark,
