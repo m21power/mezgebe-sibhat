@@ -89,6 +89,18 @@ final class AudioDownloadFailed extends SongState {
        );
 }
 
+final class AudioDownloadRequestedState extends SongState {
+  AudioDownloadRequestedState({
+    required bool isLightTheme,
+    required List<SongModel> songs,
+    required bool connectionEnabled,
+  }) : super(
+         isLightTheme: isLightTheme,
+         songs: songs,
+         connectionEnabled: connectionEnabled,
+       );
+}
+
 final class AudioDownloadingFetchingState extends SongState {
   final double progress;
   AudioDownloadingFetchingState({

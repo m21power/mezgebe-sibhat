@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:in_app_update/in_app_update.dart';
+import 'package:mezgebe_sibhat/features/Service/adService.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/song_model.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/about_page.dart';
@@ -16,7 +18,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int? expandedFolderIndex;
   Set<int> expandedFolders = {};
 
   bool isExpanded(SongModel song) =>
@@ -35,249 +36,325 @@ class _HomePageState extends State<HomePage> {
   void _checkForUpdate() async {
     try {
       final updateInfo = await InAppUpdate.checkForUpdate();
-
       if (updateInfo.updateAvailability == UpdateAvailability.updateAvailable &&
           updateInfo.flexibleUpdateAllowed) {
         await InAppUpdate.startFlexibleUpdate();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              '🎉 Update downloaded! Restart the app to apply it.',
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('🎉 Update downloaded!'),
+              action: SnackBarAction(
+                label: 'Restart',
+                onPressed: () => InAppUpdate.completeFlexibleUpdate(),
+              ),
+              behavior: SnackBarBehavior.floating,
             ),
-            action: SnackBarAction(
-              label: 'Restart',
-              onPressed: () async {
-                // Complete the update
-                await InAppUpdate.completeFlexibleUpdate();
-              },
-            ),
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       debugPrint('Update check failed: $e');
     }
   }
 
+  BannerAd? _bannerAd;
+  bool _isAdLoaded = false;
   @override
   void initState() {
     super.initState();
     _checkForUpdate();
+    _bannerAd = AdService().createBanner((ad) {
+      setState(() {
+        _isAdLoaded = true; // Set flag to true only when loaded
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final songState = context.watch<SongBloc>().state;
+    final theme = Theme.of(context);
     final isDarkMode = !songState.isLightTheme;
 
     return Theme(
       data: songState.isLightTheme ? AppThemes.lightTheme : AppThemes.darkTheme,
-      child: SafeArea(
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text("መዝገበ ስብሐት"),
-            centerTitle: true,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.favorite, color: Colors.red),
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => const DonationSheet(),
-                  );
-                },
-              ),
-              PopupMenuButton<String>(
-                color: isDarkMode ? Colors.grey[900] : Colors.white,
-                onSelected: (value) {
-                  if (value == 'about') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => AboutPage()),
-                    );
-                  } else if (value == 'theme') {
-                    context.read<SongBloc>().add(
-                      ChangeThemeEvent(isDarkMode ? 'light' : 'dark'),
-                    );
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'theme',
-                    child: ListTile(
-                      leading: Icon(
-                        isDarkMode ? Icons.wb_sunny : Icons.nightlight_round,
-                      ),
-                      title: Text('Theme'),
+      child: Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDarkMode
+                  ? [const Color(0xFF0F1226), const Color(0xFF161B33)]
+                  : [Colors.white, const Color(0xFFF0F2F8)],
+            ),
+          ),
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 120,
+                floating: true,
+                pinned: true,
+                elevation: 0,
+                centerTitle: true,
+                backgroundColor: Colors.transparent,
+                flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: true,
+                  title: Text(
+                    "መዝገበ ስብሐት",
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'about',
-                    child: ListTile(
-                      leading: Icon(Icons.info_outline),
-                      title: Text('About'),
+                ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.favorite, color: Colors.redAccent),
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const DonationSheet(),
                     ),
                   ),
+                  _buildMenu(isDarkMode),
                 ],
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => buildSongItem(
+                      songState.songs[index],
+                      theme,
+                      isDarkMode,
+                    ),
+                    childCount: songState.songs.length,
+                  ),
+                ),
               ),
             ],
           ),
-          body: BlocConsumer<SongBloc, SongState>(
-            listener: (context, songState) {
-              // TODO: implement listener
-            },
-            builder: (context, songState) {
-              return Center(
-                child: Align(
-                  alignment: Alignment.centerLeft, // start from left
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: songState.songs.length,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 20,
-                      horizontal: 40,
-                    ),
-                    itemBuilder: (context, index) {
-                      final song = songState.songs[index];
-
-                      return buildSongItem(song);
-                    },
-                  ),
-                ),
-              );
-            },
-          ),
         ),
+        bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
+            ? SafeArea(
+                // 1. Prevents clipping by system buttons/notches
+                child: Container(
+                  // 2. Use double.infinity to ensure it doesn't crop horizontally
+                  width: double.infinity,
+                  // 3. Force the exact height AdMob expects for 'AdSize.banner'
+                  height: _bannerAd!.size.height.toDouble(),
+                  decoration: BoxDecoration(
+                    color: isDarkMode
+                        ? const Color(0xFF161B33)
+                        : const Color(0xFFF0F2F8),
+                    // 4. Subtle border to separate it from the content
+                    border: Border(
+                      top: BorderSide(
+                        color: isDarkMode ? Colors.white10 : Colors.black12,
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: AdWidget(ad: _bannerAd!),
+                ),
+              )
+            : const SizedBox.shrink(),
       ),
     );
   }
 
-  Widget buildSongItem(SongModel song, {double indent = 0}) {
-    final expanded = isExpanded(song);
+  Widget _buildMenu(bool isDarkMode) {
+    final theme = Theme.of(context);
+    final iconColor = isDarkMode ? Colors.white70 : Colors.black87;
 
-    if (song.isAudio) {
-      return InkWell(
-        onTap: () {},
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16 + indent),
-          decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 3,
-                offset: const Offset(1, 2),
-              ),
-            ],
-          ),
+    return PopupMenuButton<String>(
+      icon: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.05)
+              : Colors.black.withOpacity(0.05),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.more_vert_rounded, color: iconColor),
+      ),
+      offset: const Offset(0, 55), // Positioned slightly lower
+      elevation: 8,
+      // Using a more pronounced curve for a modern feel
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05),
+          width: 1,
+        ),
+      ),
+      // Background color of the menu itself
+      color: isDarkMode ? const Color(0xFF1A1F3D) : Colors.white,
+      onSelected: (value) {
+        if (value == 'about') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AboutPage()),
+          );
+        } else if (value == 'theme') {
+          context.read<SongBloc>().add(
+            ChangeThemeEvent(isDarkMode ? 'light' : 'dark'),
+          );
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'theme',
           child: Row(
             children: [
-              const Icon(Icons.music_note, color: Colors.blueAccent, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  song.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15),
+              Icon(
+                isDarkMode
+                    ? Icons.wb_sunny_outlined
+                    : Icons.nightlight_round_outlined,
+                color: isDarkMode ? Colors.orangeAccent : Colors.indigo,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                isDarkMode ? 'Light Mode' : 'Dark Mode',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
         ),
-      );
-    }
+        const PopupMenuDivider(height: 1), // Adds a nice clean line
+        PopupMenuItem(
+          value: 'about',
+          child: Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                color: Colors.blueAccent,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'About App',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget buildSongItem(
+    SongModel song,
+    ThemeData theme,
+    bool isDarkMode, {
+    double indent = 0,
+  }) {
+    final expanded = isExpanded(song);
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            final oneOfTheChildrenIsAudio = song.children.any(
-              (child) => child.isAudio,
-            );
-
-            if (song.listHere && !oneOfTheChildrenIsAudio) {
-              toggleExpanded(song);
-            } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => SongPlayerPage(song: song)),
-              );
-            }
-          },
+        Padding(
+          padding: EdgeInsets.only(left: indent),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
             margin: const EdgeInsets.symmetric(vertical: 6),
-            padding: EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16 + indent,
-            ),
-            decoration: BoxDecoration(
-              color: expanded
-                  ? Colors.amber.withOpacity(0.25)
-                  : Colors.amber.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 4,
-                  offset: const Offset(1, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  expanded ? Icons.folder_open : Icons.folder,
-                  color: Colors.orange.shade600,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    song.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  final hasAudioChildren = song.children.any(
+                    (child) => child.isAudio,
+                  );
+                  if (song.listHere && !hasAudioChildren) {
+                    toggleExpanded(song);
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SongPlayerPage(song: song),
+                      ),
+                    );
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: expanded
+                        ? theme.primaryColor.withOpacity(0.12)
+                        : (isDarkMode
+                              ? Colors.white.withOpacity(0.05)
+                              : Colors.white),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: expanded
+                          ? theme.primaryColor.withOpacity(0.3)
+                          : Colors.transparent,
                     ),
+                    boxShadow: [
+                      if (!expanded)
+                        BoxShadow(
+                          color: Colors.black.withOpacity(
+                            isDarkMode ? 0.2 : 0.05,
+                          ),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        expanded
+                            ? Icons.folder_open_rounded
+                            : Icons.folder_rounded,
+                        color: Colors.orange.shade600,
+                        size: 26,
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: Text(
+                          song.name,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: expanded
+                                ? FontWeight.bold
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (song.listHere && !song.children.any((c) => c.isAudio))
+                        Icon(
+                          expanded
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_right_rounded,
+                          color: theme.hintColor,
+                        ),
+                    ],
                   ),
                 ),
-                if (song.listHere &&
-                    !song.children.any((child) => child.isAudio))
-                  Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_down
-                        : Icons.keyboard_arrow_right,
-                  ),
-              ],
+              ),
             ),
           ),
         ),
-
-        if (expanded && song.listHere)
-          Padding(
-            padding: EdgeInsets.only(left: indent + 30, top: 4),
-            child: Column(
-              children: song.children
-                  .map((child) => buildSongItem(child, indent: 0))
-                  .toList(),
-            ),
+        if (expanded)
+          ...song.children.map(
+            (child) =>
+                buildSongItem(child, theme, isDarkMode, indent: indent + 16),
           ),
-
-        const SizedBox(height: 4),
       ],
     );
   }

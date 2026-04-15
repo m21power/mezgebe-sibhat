@@ -4,6 +4,9 @@ import 'package:dartz/dartz.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/server_2_content.dart';
+import 'package:mezgebe_sibhat/features/songs/data/local/server_3_content.dart';
+import 'package:mezgebe_sibhat/features/songs/data/local/server_4_content.dart';
+import 'package:mezgebe_sibhat/features/songs/data/models/server_model.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mezgebe_sibhat/core/error/failure.dart';
@@ -20,6 +23,7 @@ class SongRepoImpl implements SongRepository {
   final NetworkInfo networkInfo;
   final http.Client client;
   final Box<SongModel> songsBox;
+  final serverManager = ServerManager();
   SongRepoImpl({
     required this.sharedPreferences,
     required this.networkInfo,
@@ -164,7 +168,11 @@ class SongRepoImpl implements SongRepository {
       return;
     }
 
-    String finalUrl = child.url ?? "";
+    String finalUrl = await getAudioUrlFromServer(
+      serverManager.next(),
+      parent.id,
+      child.name,
+    );
     bool downloaded = false;
 
     /// Helper: download a single URL with progress
@@ -237,7 +245,7 @@ class SongRepoImpl implements SongRepository {
       }
     }
 
-    // Try primary server silently (no error emitted if fails)
+    // WHICH SERVER TURN
     await for (final event in downloadStream(
       parent,
       child,
@@ -254,39 +262,13 @@ class SongRepoImpl implements SongRepository {
       }
     }
 
-    // If primary failed, try fallback server
-    if (!downloaded) {
-      print("Primary server failed, trying fallback...");
-      try {
-        final fallbackUrl = await getAudioUrlFromServer(
-          false,
-          parent.id,
-          child.name,
-        );
-
-        if (fallbackUrl.isNotEmpty) {
-          finalUrl = fallbackUrl;
-          await for (final event in downloadStream(parent, child, finalUrl)) {
-            yield event; // emit all events including intermediate progress
-            final progressValue = event
-                .getOrElse(
-                  () => DownloadAudioReport(songModel: parent, progress: 0),
-                )
-                .progress;
-            if (progressValue == 100) {
-              downloaded = true;
-            }
-          }
-        }
-      } catch (e) {
-        print("Fallback server failed: $e");
-      }
-    }
-
     // Both servers failed
     if (!downloaded) {
       yield Left(
-        ServerFailure(message: "Failed to download audio from both servers."),
+        ServerFailure(
+          message:
+              "Monthly download limit reached. Support the project to help us increase capacity and bring servers back sooner.",
+        ),
       );
     }
   }
@@ -367,12 +349,14 @@ $feedback
   }
 
   Future<String> getAudioUrlFromServer(
-    bool isServer1,
+    AudioServer server,
     String parentPath,
     String audioName,
   ) async {
+    print("✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅");
+    print("Fetching from server: $server");
     try {
-      final jsonValue = isServer1 ? server1Content : server2Content;
+      final jsonValue = getServerContent(server);
 
       List<SongModel> songs = jsonValue
           .map<SongModel>((json) => SongModel.fromJson(json))
@@ -429,4 +413,17 @@ String decodeAndTrimUrl(String url) {
   final filename = decoded.substring(decoded.lastIndexOf('/') + 1);
   final match = RegExp(r'^(.*)_[^_]+(\.\w+)$').firstMatch(filename);
   return match != null ? '${match.group(1)}${match.group(2)}' : filename;
+}
+
+List<dynamic> getServerContent(AudioServer server) {
+  switch (server) {
+    case AudioServer.server1:
+      return server1Content;
+    case AudioServer.server2:
+      return server2Content;
+    case AudioServer.server3:
+      return server3Content;
+    case AudioServer.server4:
+      return server4Content;
+  }
 }

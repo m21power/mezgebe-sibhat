@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mezgebe_sibhat/dependency_injection.dart';
+import 'package:mezgebe_sibhat/features/Service/adService.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/home_page.dart';
 import 'package:mezgebe_sibhat/theme/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AdService().init();
   await init();
   await dotenv.load(fileName: ".env");
   runApp(const MyApp());

@@ -139,6 +139,13 @@ class SongBloc extends Bloc<SongEvent, SongState> {
       );
     });
     on<DownloadAudioEvent>((event, emit) async {
+      emit(
+        AudioDownloadRequestedState(
+          isLightTheme: state.isLightTheme,
+          songs: state.songs,
+          connectionEnabled: state.connectionEnabled,
+        ),
+      );
       // listen to the stream from the use case
       await emit.forEach<Either<Failure, DownloadAudioReport>>(
         downloadAudioUseCase(event.child, event.parent),
