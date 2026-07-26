@@ -58,162 +58,165 @@ class _AboutPageState extends State<AboutPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF0F1226)
-          : const Color(0xFFF8F9FE),
-      appBar: AppBar(
-        title: const Text('About'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent),
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => const DonationSheet(),
+    return SafeArea(
+      child: Scaffold(
+        backgroundColor: isDark
+            ? const Color(0xFF0F1226)
+            : const Color(0xFFF8F9FE),
+        appBar: AppBar(
+          title: const Text('About'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent),
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const DonationSheet(),
+              ),
             ),
-          ),
-        ],
-      ),
-      body: BlocListener<SongBloc, SongState>(
-        listener: (context, songState) {
-          if (songState is FeedbackSubmittedState) {
-            _showSuccess();
-          } else if (songState is FeedbackSubmissionFailedState) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(songState.message),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        },
-        child: BlocBuilder<SongBloc, SongState>(
-          builder: (context, songState) {
-            final isLoading = songState is SubmitFeedbackLoadingState;
-
-            // Logic check: Enable if text is not empty OR an image is selected
-            final bool hasText = _feedbackController.text.trim().isNotEmpty;
-            final bool hasImage = _selectedImage != null;
-            final bool isButtonDisabled = isLoading || !(hasText || hasImage);
-
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                children: [
-                  // --- HEADER ---
-                  _buildHeader(isDark, theme),
-
-                  const SizedBox(height: 30),
-
-                  // --- DEDICATION ---
-                  _buildDedicationCard(isDark),
-
-                  const SizedBox(height: 30),
-
-                  // --- FEEDBACK FORM ---
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      "  Report a Bug",
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.03)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          _buildTextField(
-                            controller: _feedbackController,
-                            hint:
-                                "Describe the issue (Optional if image attached)...",
-                            isDark: isDark,
-                          ),
-                          const SizedBox(height: 20),
-                          _buildImagePicker(theme),
-                          const SizedBox(height: 24),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 55,
-                            child: ElevatedButton(
-                              onPressed: isButtonDisabled
-                                  ? null
-                                  : () => _submit(songState),
-                              style: ElevatedButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                elevation: 0,
-                                disabledBackgroundColor: theme.primaryColor
-                                    .withOpacity(0.2),
-                              ),
-                              child: isLoading
-                                  ? const SizedBox(
-                                      height: 22,
-                                      width: 22,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text(
-                                      "Send Report 🚀",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                ],
-              ),
-            );
-          },
+          ],
         ),
-      ),
-      bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
-          ? SafeArea(
-              // 1. Prevents clipping by system buttons/notches
-              child: Container(
-                // 2. Use double.infinity to ensure it doesn't crop horizontally
-                width: double.infinity,
-                // 3. Force the exact height AdMob expects for 'AdSize.banner'
-                height: _bannerAd!.size.height.toDouble(),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF161B33)
-                      : const Color(0xFFF0F2F8),
-                  // 4. Subtle border to separate it from the content
-                  border: Border(
-                    top: BorderSide(
-                      color: isDark ? Colors.white10 : Colors.black12,
-                      width: 0.5,
+        body: BlocListener<SongBloc, SongState>(
+          listener: (context, songState) {
+            if (songState is FeedbackSubmittedState) {
+              _showSuccess();
+            } else if (songState is FeedbackSubmissionFailedState) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(songState.message),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          child: BlocBuilder<SongBloc, SongState>(
+            builder: (context, songState) {
+              final isLoading = songState is SubmitFeedbackLoadingState;
+
+              // Logic check: Enable if text is not empty OR an image is selected
+              final bool hasText = _feedbackController.text.trim().isNotEmpty;
+              final bool hasImage = _selectedImage != null;
+              final bool isButtonDisabled = isLoading || !(hasText || hasImage);
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    // --- HEADER ---
+                    _buildHeader(isDark, theme),
+
+                    const SizedBox(height: 30),
+
+                    // --- DEDICATION ---
+                    _buildDedicationCard(isDark),
+
+                    const SizedBox(height: 30),
+
+                    // --- FEEDBACK FORM ---
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "  Report a Bug",
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.03)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            _buildTextField(
+                              controller: _feedbackController,
+                              hint:
+                                  "Describe the issue (Optional if image attached)...",
+                              isDark: isDark,
+                            ),
+                            const SizedBox(height: 20),
+                            _buildImagePicker(theme),
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 55,
+                              child: ElevatedButton(
+                                onPressed: isButtonDisabled
+                                    ? null
+                                    : () => _submit(songState),
+                                style: ElevatedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  elevation: 0,
+                                  disabledBackgroundColor: theme.primaryColor
+                                      .withOpacity(0.2),
+                                ),
+                                child: isLoading
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text(
+                                        "Send Report 🚀",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
+            ? SafeArea(
+                // 1. Prevents clipping by system buttons/notches
+                child: Container(
+                  // 2. Use double.infinity to ensure it doesn't crop horizontally
+                  width: double.infinity,
+                  // 3. Force the exact height AdMob expects for 'AdSize.banner'
+                  height: _bannerAd!.size.height.toDouble(),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF161B33)
+                        : const Color(0xFFF0F2F8),
+                    // 4. Subtle border to separate it from the content
+                    border: Border(
+                      top: BorderSide(
+                        color: isDark ? Colors.white10 : Colors.black12,
+                        width: 0.5,
+                      ),
                     ),
                   ),
+                  alignment: Alignment.center,
+                  child: AdWidget(ad: _bannerAd!),
                 ),
-                alignment: Alignment.center,
-                child: AdWidget(ad: _bannerAd!),
-              ),
-            )
-          : const SizedBox.shrink(),
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 

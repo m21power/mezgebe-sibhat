@@ -84,90 +84,103 @@ class _HomePageState extends State<HomePage> {
 
     return Theme(
       data: songState.isLightTheme ? AppThemes.lightTheme : AppThemes.darkTheme,
-      child: Scaffold(
-        body: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDarkMode
-                  ? [const Color(0xFF0F1226), const Color(0xFF161B33)]
-                  : [Colors.white, const Color(0xFFF0F2F8)],
+      child: SafeArea(
+        child: Scaffold(
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDarkMode
+                    ? [const Color(0xFF0F1226), const Color(0xFF161B33)]
+                    : [Colors.white, const Color(0xFFF0F2F8)],
+              ),
             ),
-          ),
-          child: CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                expandedHeight: 120,
-                floating: true,
-                pinned: true,
-                elevation: 0,
-                centerTitle: true,
-                backgroundColor: Colors.transparent,
-                flexibleSpace: FlexibleSpaceBar(
+            child: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: 120,
+                  floating: true,
+                  pinned: true,
+                  elevation: 0,
                   centerTitle: true,
-                  title: Text(
-                    "መዝገበ ስብሐት",
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.favorite, color: Colors.redAccent),
-                    onPressed: () => showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => const DonationSheet(),
-                    ),
-                  ),
-                  _buildMenu(isDarkMode),
-                ],
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => buildSongItem(
-                      songState.songs[index],
-                      theme,
-                      isDarkMode,
-                    ),
-                    childCount: songState.songs.length,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
-            ? SafeArea(
-                // 1. Prevents clipping by system buttons/notches
-                child: Container(
-                  // 2. Use double.infinity to ensure it doesn't crop horizontally
-                  width: double.infinity,
-                  // 3. Force the exact height AdMob expects for 'AdSize.banner'
-                  height: _bannerAd!.size.height.toDouble(),
-                  decoration: BoxDecoration(
-                    color: isDarkMode
-                        ? const Color(0xFF161B33)
-                        : const Color(0xFFF0F2F8),
-                    // 4. Subtle border to separate it from the content
-                    border: Border(
-                      top: BorderSide(
-                        color: isDarkMode ? Colors.white10 : Colors.black12,
-                        width: 0.5,
+                  backgroundColor: Colors.transparent,
+                  flexibleSpace: FlexibleSpaceBar(
+                    centerTitle: true,
+                    title: GestureDetector(
+                      onTap: () {
+                        // MobileAds.instance.openAdInspector((error) {
+                        //   if (error != null) {
+                        //     debugPrint('Ad Inspector error: ${error.message}');
+                        //   } else {
+                        //     debugPrint('Ad Inspector closed.');
+                        //   }
+                        // });
+                      },
+                      child: Text(
+                        "መዝገበ ስብሐት",
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.1,
+                        ),
                       ),
                     ),
                   ),
-                  alignment: Alignment.center,
-                  child: AdWidget(ad: _bannerAd!),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.favorite, color: Colors.redAccent),
+                      onPressed: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => const DonationSheet(),
+                      ),
+                    ),
+                    _buildMenu(isDarkMode),
+                  ],
                 ),
-              )
-            : const SizedBox.shrink(),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => buildSongItem(
+                        songState.songs[index],
+                        theme,
+                        isDarkMode,
+                      ),
+                      childCount: songState.songs.length,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
+              ? SafeArea(
+                  // 1. Prevents clipping by system buttons/notches
+                  child: Container(
+                    // 2. Use double.infinity to ensure it doesn't crop horizontally
+                    width: double.infinity,
+                    // 3. Force the exact height AdMob expects for 'AdSize.banner'
+                    height: _bannerAd!.size.height.toDouble(),
+                    decoration: BoxDecoration(
+                      color: isDarkMode
+                          ? const Color(0xFF161B33)
+                          : const Color(0xFFF0F2F8),
+                      // 4. Subtle border to separate it from the content
+                      border: Border(
+                        top: BorderSide(
+                          color: isDarkMode ? Colors.white10 : Colors.black12,
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: AdWidget(ad: _bannerAd!),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
       ),
     );
   }

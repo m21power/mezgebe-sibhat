@@ -37,7 +37,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   late StreamSubscription<Duration> _positionSub;
   bool isPlaying = false;
   bool isLoading = false;
-  final Map<String, Duration> _durationCache = {};
   final AudioPlayer _tempPlayer = AudioPlayer();
 
   @override
@@ -97,7 +96,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
       return;
     }
     final localUrl = currentChild.audioLocalPath!;
-    final currentTag = _audioPlayer.sequenceState?.sequence.firstOrNull?.tag;
+    final currentTag = _audioPlayer.sequenceState.sequence.firstOrNull?.tag;
     if (currentTag != localUrl) {
       await _audioPlayer.setFilePath(localUrl, tag: localUrl);
       await _audioPlayer.setSpeed(playbackSpeed);
@@ -157,246 +156,250 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Scaffold(
-      extendBodyBehindAppBar: true, // Transparent AppBar effect
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text(
-          widget.song.name,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+    return SafeArea(
+      child: Scaffold(
+        extendBodyBehindAppBar: true, // Transparent AppBar effect
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Text(
+            widget.song.name,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          centerTitle: true,
+          leading: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 35),
+          ),
         ),
-        centerTitle: true,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 35),
-        ),
-      ),
-      body: BlocConsumer<SongBloc, SongState>(
-        listenWhen: (previous, current) {
-          if (current is AudioDownloadSuccessfully) {
-            // Only trigger if the previous state wasn't success OR
-            // if the newly downloaded song is different from the last one
-            return previous is! AudioDownloadSuccessfully;
-          }
-          return false;
-        },
-        listener: (context, songState) {
-          if (songState is AudioDownloadSuccessfully) {
-            setState(() => songModel = songState.songModel);
+        body: BlocConsumer<SongBloc, SongState>(
+          listenWhen: (previous, current) {
+            if (current is AudioDownloadSuccessfully) {
+              // Only trigger if the previous state wasn't success OR
+              // if the newly downloaded song is different from the last one
+              return previous is! AudioDownloadSuccessfully;
+            }
+            return false;
+          },
+          listener: (context, songState) {
+            if (songState is AudioDownloadSuccessfully) {
+              setState(() => songModel = songState.songModel);
 
-            final adService = AdService();
-            adService.incrementDownloadCount();
+              final adService = AdService();
+              adService.incrementDownloadCount();
 
-            debugPrint("Download Count: ${adService.downloadCounter}");
+              debugPrint("Download Count: ${adService.downloadCounter}");
 
-            if (adService.downloadCounter >= 2) {
-              if (adService.interstitialAd != null) {
-                _audioPlayer.pause();
+              if (adService.downloadCounter >= 2) {
+                if (adService.interstitialAd != null) {
+                  _audioPlayer.pause();
 
-                adService.interstitialAd!.fullScreenContentCallback =
-                    FullScreenContentCallback(
-                      onAdDismissedFullScreenContent: (ad) {
-                        ad.dispose();
-                        adService.loadInterstitial();
-                        _audioPlayer.play();
-                      },
-                      onAdFailedToShowFullScreenContent: (ad, error) {
-                        ad.dispose();
-                        adService.loadInterstitial();
-                        _audioPlayer.play();
-                      },
-                    );
+                  adService.interstitialAd!.fullScreenContentCallback =
+                      FullScreenContentCallback(
+                        onAdDismissedFullScreenContent: (ad) {
+                          ad.dispose();
+                          adService.loadInterstitial();
+                          _audioPlayer.play();
+                        },
+                        onAdFailedToShowFullScreenContent: (ad, error) {
+                          ad.dispose();
+                          adService.loadInterstitial();
+                          _audioPlayer.play();
+                        },
+                      );
 
-                adService.interstitialAd!.show();
-                adService.clearInterstitial();
-                adService.resetDownloadCount();
-              } else {
-                // Reset even if ad isn't ready so the next pair triggers it
-                adService.resetDownloadCount();
-                adService.loadInterstitial();
+                  adService.interstitialAd!.show();
+                  adService.clearInterstitial();
+                  adService.resetDownloadCount();
+                } else {
+                  // Reset even if ad isn't ready so the next pair triggers it
+                  adService.resetDownloadCount();
+                  adService.loadInterstitial();
+                }
               }
             }
-          }
-        },
-        builder: (context, songState) {
-          return Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: isDark
-                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E)]
-                    : [const Color(0xFFF1F2F6), Colors.white],
+          },
+          builder: (context, songState) {
+            return Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? [const Color(0xFF1A1A2E), const Color(0xFF16213E)]
+                      : [const Color(0xFFF1F2F6), Colors.white],
+                ),
               ),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 100),
-                // 1. Image Viewer with soft shadow
-                Expanded(
-                  flex: 3,
-                  child: imageWidget(
-                    theme,
-                    songModel!.name,
-                    songState,
-                    context,
-                  ),
-                ),
-
-                // 2. Song Info
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 30,
-                    vertical: 10,
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        songModel!.children[currentIndex].name,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "መዝገበ ስብሐት",
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.primaryColor.withOpacity(0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 3. Slider Section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 4,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 7,
-                          ),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 14,
-                          ),
-                          activeTrackColor: theme.primaryColor,
-                          inactiveTrackColor: theme.primaryColor.withOpacity(
-                            0.15,
-                          ),
-                        ),
-                        child: Slider(
-                          value: progress.clamp(0.0, 1.0),
-                          onChanged: (value) =>
-                              setState(() => progress = value),
-                          onChangeEnd: (value) =>
-                              _audioPlayer.seek(totalDuration * value),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              formatDuration(currentPosition),
-                              style: theme.textTheme.labelMedium,
-                            ),
-                            Text(
-                              formatDuration(totalDuration),
-                              style: theme.textTheme.labelMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 4. Main Controls Row
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildPlaybackAction(
-                        Icons.skip_previous_rounded,
-                        () => playSongAtIndex(
-                          (currentIndex - 1 + songModel!.children.length) %
-                              songModel!.children.length,
-                        ),
-                        size: 40,
-                      ),
-                      const SizedBox(width: 25),
-                      _buildMainPlayButton(theme, songState),
-                      const SizedBox(width: 25),
-                      _buildPlaybackAction(
-                        Icons.skip_next_rounded,
-                        () => playSongAtIndex(
-                          (currentIndex + 1) % songModel!.children.length,
-                        ),
-                        size: 40,
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 5. Glassmorphic Bottom List
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 20),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.05)
-                          : Colors.black.withOpacity(0.03),
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(40),
-                      ),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(40),
-                      ),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 20, bottom: 20),
-                          itemCount: songModel!.children.length,
-                          itemBuilder: (context, index) {
-                            final song = songModel!.children[index];
-                            final isSelected = index == currentIndex;
-                            return _buildListTile(song, isSelected, theme);
-                          },
-                        ),
-                      ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 100),
+                  // 1. Image Viewer with soft shadow
+                  Expanded(
+                    flex: 3,
+                    child: imageWidget(
+                      theme,
+                      songModel!.name,
+                      songState,
+                      context,
                     ),
                   ),
+
+                  // 2. Song Info
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 30,
+                      vertical: 10,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          songModel!.children[currentIndex].name,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "መዝገበ ስብሐት",
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.primaryColor.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // 3. Slider Section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 7,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 14,
+                            ),
+                            activeTrackColor: theme.primaryColor,
+                            inactiveTrackColor: theme.primaryColor.withOpacity(
+                              0.15,
+                            ),
+                          ),
+                          child: Slider(
+                            value: progress.clamp(0.0, 1.0),
+                            onChanged: (value) =>
+                                setState(() => progress = value),
+                            onChangeEnd: (value) =>
+                                _audioPlayer.seek(totalDuration * value),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                formatDuration(currentPosition),
+                                style: theme.textTheme.labelMedium,
+                              ),
+                              Text(
+                                formatDuration(totalDuration),
+                                style: theme.textTheme.labelMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // 4. Main Controls Row
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildPlaybackAction(
+                          Icons.skip_previous_rounded,
+                          () => playSongAtIndex(
+                            (currentIndex - 1 + songModel!.children.length) %
+                                songModel!.children.length,
+                          ),
+                          size: 40,
+                        ),
+                        const SizedBox(width: 25),
+                        _buildMainPlayButton(theme, songState),
+                        const SizedBox(width: 25),
+                        _buildPlaybackAction(
+                          Icons.skip_next_rounded,
+                          () => playSongAtIndex(
+                            (currentIndex + 1) % songModel!.children.length,
+                          ),
+                          size: 40,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // 5. Glassmorphic Bottom List
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 20),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.05)
+                            : Colors.black.withOpacity(0.03),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(40),
+                        ),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.1),
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(40),
+                        ),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: ListView.builder(
+                            padding: const EdgeInsets.only(top: 20, bottom: 20),
+                            itemCount: songModel!.children.length,
+                            itemBuilder: (context, index) {
+                              final song = songModel!.children[index];
+                              final isSelected = index == currentIndex;
+                              return _buildListTile(song, isSelected, theme);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
+            ? SafeArea(
+                child: Container(
+                  width: double.infinity,
+                  height: _bannerAd!.size.height.toDouble(),
+                  // MATCH THE PLAYER PAGE GRADIENT END COLOR
+                  color: isDark ? const Color(0xFF16213E) : Colors.white,
+                  alignment: Alignment.center,
+                  child: AdWidget(ad: _bannerAd!),
                 ),
-              ],
-            ),
-          );
-        },
+              )
+            : const SizedBox.shrink(),
       ),
-      bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
-          ? SafeArea(
-              child: Container(
-                width: double.infinity,
-                height: _bannerAd!.size.height.toDouble(),
-                // MATCH THE PLAYER PAGE GRADIENT END COLOR
-                color: isDark ? const Color(0xFF16213E) : Colors.white,
-                alignment: Alignment.center,
-                child: AdWidget(ad: _bannerAd!),
-              ),
-            )
-          : const SizedBox.shrink(),
     );
   }
 

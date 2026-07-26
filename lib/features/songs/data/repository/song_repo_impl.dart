@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:dartz/dartz.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:mezgebe_sibhat/features/songs/data/local/cached_song_data.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/server_2_content.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/server_3_content.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/server_4_content.dart';
@@ -16,23 +18,83 @@ import 'package:mezgebe_sibhat/features/songs/data/local/song_model.dart';
 import 'package:mezgebe_sibhat/features/songs/domain/entities/SongModel.dart';
 import 'package:mezgebe_sibhat/features/songs/domain/repository/song_repo.dart';
 import 'package:http/http.dart' as http;
-import 'package:collection/collection.dart'; // optional for natural sorting
 
 class SongRepoImpl implements SongRepository {
   final SharedPreferences sharedPreferences;
   final NetworkInfo networkInfo;
   final http.Client client;
   final Box<SongModel> songsBox;
+  final Box<CachedAudioData> downloadedAudioBox;
+  final Box<CachedImageData> imageCacheBox;
   final serverManager = ServerManager();
+  final Map<AudioServer, List<SongModel>> _serverCache = {};
+  final Map<AudioServer, Map<String, String>> _audioUrlLookup = {};
+  Future<void> initializeServers() async {
+    for (final server in AudioServer.values) {
+      final jsonValue = getServerContent(server);
+
+      List<SongModel> songs = jsonValue
+          .map<SongModel>((json) => SongModel.fromJson(json))
+          .toList();
+
+      songs = _sortRecursive(songs);
+
+      _serverCache[server] = songs;
+
+      buildLookup(server, songs, 'root');
+    }
+  }
+
+  void applyCachedData(List<SongModel> songs) {
+    for (final song in songs) {
+      final audioCache = downloadedAudioBox.get(song.id);
+
+      if (audioCache != null) {
+        song.audioLocalPath = audioCache.localPath;
+        song.isDownloaded = true;
+      }
+
+      final imageCache = imageCacheBox.get(song.id);
+
+      if (imageCache != null) {
+        song.imageLocalPath = imageCache.imagePath;
+      }
+
+      if (song.children.isNotEmpty) {
+        applyCachedData(song.children);
+      }
+    }
+  }
+
+  void buildLookup(
+    AudioServer server,
+    List<SongModel> songs, [
+    String? parentId,
+  ]) {
+    _audioUrlLookup[server] ??= {};
+
+    for (final song in songs) {
+      if (song.isAudio && song.url != null && parentId != null) {
+        final key = '$parentId|${song.name}';
+        _audioUrlLookup[server]![key] = song.url!;
+      }
+
+      if (song.children.isNotEmpty) {
+        buildLookup(server, song.children, song.id);
+      }
+    }
+  }
+
   SongRepoImpl({
     required this.sharedPreferences,
     required this.networkInfo,
     required this.client,
     required this.songsBox,
+    required this.downloadedAudioBox,
+    required this.imageCacheBox,
   });
   @override
   Future<String> changeTheme(String theme) {
-    print(theme);
     return Future.value(
       sharedPreferences.setString('theme', theme).then((value) => theme),
     );
@@ -76,53 +138,58 @@ class SongRepoImpl implements SongRepository {
     return list;
   }
 
+  List<SongModel> _sortRecursiveInMain(List<SongModel> list) {
+    for (var song in list) {
+      if (song.children.isNotEmpty) {
+        song.children = _sortRecursiveInMain(song.children);
+      }
+    }
+
+    list.sort(_sortByName);
+    return list;
+  }
+
   @override
   Future<List<SongModel>> loadSongs() async {
     try {
-      // await songsBox.deleteAll(songsBox.keys);
+      final raw = _serverCache[AudioServer.server1];
 
-      final jsonValue = server1Content;
-      // final jsonValue = server2Content;
-      List<SongModel> songs = jsonValue
-          .map<SongModel>((json) => SongModel.fromJson(json))
-          .toList();
-      songs = _sortRecursive(songs);
+      if (raw == null) {
+        return Future.error("Failed to load songs from server");
+      }
 
-      if (songsBox.containsKey('root')) {
-        final SongModel root = songsBox.get('root')!;
-        final cachedLength = root.children.length;
-        final newLength = songs.length;
+      // 🚀 move heavy parsing to background
+      final songs = await compute(
+        (list) => list.map((e) => SongModel.fromJson(e.toJson())).toList(),
+        raw,
+      );
 
-        // If length mismatch, clear cache and refresh
-        if (cachedLength != newLength) {
-          await songsBox.deleteAll(songsBox.keys);
-          final newRoot = SongModel(
-            id: 'root',
-            name: 'Root',
-            listHere: true,
-            url: null,
-            isAudio: false,
-            children: songs,
-          );
-          await songsBox.put('root', newRoot);
-          return songs;
-        } else {
-          // Same length → assume cache is valid
-          return root.children;
-        }
-      } else {
-        // No cache yet → save new
-        final root = SongModel(
-          id: 'root',
-          name: 'Root',
-          listHere: true,
-          url: null,
-          isAudio: false,
-          children: songs,
-        );
-        await songsBox.put('root', root);
+      // still main isolate (safe)
+      _sortRecursiveInMain(songs);
+      applyCachedData(songs);
+
+      final freshRoot = SongModel(
+        id: 'root',
+        name: 'Root',
+        listHere: true,
+        url: null,
+        isAudio: false,
+        children: songs,
+      );
+
+      if (!songsBox.containsKey('root')) {
+        await songsBox.put('root', freshRoot);
         return songs;
       }
+
+      final cachedRoot = songsBox.get('root')!;
+      if (cachedRoot.children.length != songs.length) {
+        await songsBox.put('root', freshRoot);
+        return songs;
+      }
+
+      await songsBox.put('root', freshRoot);
+      return songs;
     } catch (e) {
       return Future.error("Error loading songs: $e");
     }
@@ -137,21 +204,11 @@ class SongRepoImpl implements SongRepository {
       final root = songsBox.get('root');
       if (root == null) return Future.error("Root not found");
 
-      void updateImageRecursive(List<SongModel> list) {
-        for (var s in list) {
-          if (s.id == song.id) {
-            s.imageLocalPath = imagePath;
-            return;
-          }
-          if (s.children.isNotEmpty) {
-            updateImageRecursive(s.children);
-          }
-        }
-      }
-
-      updateImageRecursive(root.children);
-
-      await songsBox.put('root', root);
+      await imageCacheBox.put(
+        song.id,
+        CachedImageData(songId: song.id, imagePath: imagePath),
+      );
+      song.imageLocalPath = imagePath;
       return Future.value(root.children);
     } catch (e) {
       return Future.error("Error saving image locally: $e");
@@ -207,7 +264,6 @@ class SongRepoImpl implements SongRepository {
           sink.add(chunk);
 
           double progress = total > 0 ? downloadedBytes / total : 0;
-          print("Download progress: $progress");
           yield Right(
             DownloadAudioReport(songModel: parent, progress: progress * 100),
           );
@@ -215,28 +271,15 @@ class SongRepoImpl implements SongRepository {
 
         await sink.close();
 
+        // child.isDownloaded = true;
+        // child.audioLocalPath = file.path;
+
+        await downloadedAudioBox.put(
+          child.id,
+          CachedAudioData(songId: child.id, localPath: file.path),
+        );
         child.isDownloaded = true;
         child.audioLocalPath = file.path;
-
-        // persist in songsBox recursively
-        final root = songsBox.get('root');
-        if (root != null) {
-          void updateAudioPathRecursive(List<SongModel> list) {
-            for (var s in list) {
-              if (s.id == parent.id) {
-                s.audioLocalPath = file.path;
-                return;
-              }
-              if (s.children.isNotEmpty) {
-                updateAudioPathRecursive(s.children);
-              }
-            }
-          }
-
-          updateAudioPathRecursive(root.children);
-          await songsBox.put('root', root);
-        }
-
         yield Right(DownloadAudioReport(progress: 100, songModel: parent));
       } catch (e) {
         if (emitErrors) {
@@ -353,36 +396,15 @@ $feedback
     String parentPath,
     String audioName,
   ) async {
-    print("✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅");
-    print("Fetching from server: $server");
-    try {
-      final jsonValue = getServerContent(server);
+    final key = '$parentPath|$audioName';
 
-      List<SongModel> songs = jsonValue
-          .map<SongModel>((json) => SongModel.fromJson(json))
-          .toList();
-      songs = _sortRecursive(songs);
+    final url = _audioUrlLookup[server]?[key];
 
-      // Step 1: Find the parent folder
-      final parent = findParentFolder(songs, parentPath);
-
-      if (parent == null) {
-        throw Exception("Parent path not found: $parentPath");
-      }
-
-      // Step 2: Search for the audio inside parent (any depth)
-      final audioModel = findAudioRecursively(parent.children, audioName);
-      print("*********************************");
-      print("Audio model found: ${audioModel?.url}");
-      if (audioModel == null) {
-        throw Exception("Audio not found: $audioName");
-      }
-
-      // Step 3: return URL
-      return audioModel.url ?? "";
-    } catch (e) {
-      return Future.error("Error loading songs: $e");
+    if (url == null) {
+      throw Exception("Audio not found on $server");
     }
+
+    return url;
   }
 
   SongModel? findAudioRecursively(List<SongModel> songs, String audioName) {

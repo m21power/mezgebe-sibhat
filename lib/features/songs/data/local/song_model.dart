@@ -17,16 +17,14 @@ class SongModel extends HiveObject {
   @HiveField(4)
   bool listHere;
 
+  // runtime only
+  bool isDownloaded = false;
+
+  String? audioLocalPath;
+
+  String? imageLocalPath;
+
   @HiveField(5)
-  bool isDownloaded; // audio downloaded
-
-  @HiveField(6)
-  String? audioLocalPath; // local audio file path
-
-  @HiveField(7)
-  String? imageLocalPath; // local image path
-
-  @HiveField(8)
   List<SongModel> children;
 
   SongModel({
@@ -35,9 +33,9 @@ class SongModel extends HiveObject {
     this.url,
     this.isAudio = false,
     this.listHere = false,
-    this.isDownloaded = false,
-    this.audioLocalPath,
-    this.imageLocalPath,
+    // this.isDownloaded = false,
+    // this.audioLocalPath,
+    // this.imageLocalPath,
     this.children = const [],
   });
 
@@ -62,9 +60,9 @@ class SongModel extends HiveObject {
       url: json['url'],
       isAudio: json['isAudio'] ?? false,
       listHere: json['listHere'] ?? false,
-      isDownloaded: json['isDownloaded'] ?? false,
-      audioLocalPath: json['audioLocalPath'],
-      imageLocalPath: json['imageLocalPath'],
+      // isDownloaded: json['isDownloaded'] ?? false,
+      // audioLocalPath: json['audioLocalPath'],
+      // imageLocalPath: json['imageLocalPath'],
       children: children,
     );
   }
@@ -76,9 +74,9 @@ class SongModel extends HiveObject {
       'url': url,
       'isAudio': isAudio,
       'listHere': listHere,
-      'isDownloaded': isDownloaded,
-      'audioLocalPath': audioLocalPath,
-      'imageLocalPath': imageLocalPath,
+      // 'isDownloaded': isDownloaded,
+      // 'audioLocalPath': audioLocalPath,
+      // 'imageLocalPath': imageLocalPath,
       'children': children.map((e) => e.toJson()).toList(),
     };
   }

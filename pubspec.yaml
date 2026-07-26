@@ -1,9 +1,9 @@
 name: mezgebe_sibhat
-description: "A new Flutter project."
+description: "Mezgebe Sibhat is a mobile application built using Flutter. It serves as a platform for users to access and engage with content related to Mezgebe Sibhat, providing features such as audio playback, offline access, and user-friendly navigation. The app aims to enhance the user experience by offering a seamless interface and a rich collection of content for users to explore."
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 1.1.0+12
+version: 1.1.0+17
 
 environment:
   sdk: ^3.9.2

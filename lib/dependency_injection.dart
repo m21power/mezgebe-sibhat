@@ -1,4 +1,5 @@
 import 'package:get_it/get_it.dart' as get_it;
+import 'package:mezgebe_sibhat/features/songs/data/local/cached_song_data.dart';
 import 'package:mezgebe_sibhat/features/songs/domain/usecases/submit_feedback_usecase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -23,11 +24,18 @@ Future<void> init() async {
   sl.registerLazySingleton<SharedPreferences>(() => sharedPreferencesInstance);
   sl.registerLazySingleton<http.Client>(() => http.Client());
   await Hive.initFlutter();
-
+  Hive.registerAdapter(CachedAudioDataAdapter());
+  Hive.registerAdapter(CachedImageDataAdapter());
   Hive.registerAdapter(SongModelAdapter());
   final box = await Hive.openBox<SongModel>('songsBox');
   sl.registerLazySingleton<Box<SongModel>>(() => box);
+  final downloadedAudioBox = await Hive.openBox<CachedAudioData>(
+    'downloaded_audio',
+  );
 
+  final imageCacheBox = await Hive.openBox<CachedImageData>('image_cache');
+  sl.registerLazySingleton<Box<CachedAudioData>>(() => downloadedAudioBox);
+  sl.registerLazySingleton<Box<CachedImageData>>(() => imageCacheBox);
   // Features - Songs
   // Bloc
   sl.registerFactory(
@@ -56,6 +64,8 @@ Future<void> init() async {
       networkInfo: sl(),
       client: sl(),
       songsBox: sl(),
+      downloadedAudioBox: sl(),
+      imageCacheBox: sl(),
     ),
   );
 }
