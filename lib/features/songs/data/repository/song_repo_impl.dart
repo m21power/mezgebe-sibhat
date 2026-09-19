@@ -1,23 +1,103 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dartz/dartz.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/cached_song_data.dart';
-import 'package:mezgebe_sibhat/features/songs/data/local/server_2_content.dart';
-import 'package:mezgebe_sibhat/features/songs/data/local/server_3_content.dart';
-import 'package:mezgebe_sibhat/features/songs/data/local/server_4_content.dart';
 import 'package:mezgebe_sibhat/features/songs/data/models/server_model.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mezgebe_sibhat/core/error/failure.dart';
 import 'package:mezgebe_sibhat/core/network/network_info_impl.dart';
-import 'package:mezgebe_sibhat/features/songs/data/local/server_1_content.dart';
 import 'package:mezgebe_sibhat/features/songs/data/local/song_model.dart';
 import 'package:mezgebe_sibhat/features/songs/domain/entities/SongModel.dart';
 import 'package:mezgebe_sibhat/features/songs/domain/repository/song_repo.dart';
 import 'package:http/http.dart' as http;
+
+// ---------------------------------------------------------------------------
+// Top-level helpers (must be top-level/static, not instance methods, so they
+// can be handed to `compute()` and run on a background isolate).
+// ---------------------------------------------------------------------------
+
+int _sortByName(SongModel a, SongModel b) {
+  final regex = RegExp(r'^(\d+)-?');
+  final aMatch = regex.firstMatch(a.name);
+  final bMatch = regex.firstMatch(b.name);
+
+  if (aMatch != null && bMatch != null) {
+    final aNum = int.parse(aMatch.group(1)!);
+    final bNum = int.parse(bMatch.group(1)!);
+    if (aNum != bNum) return aNum.compareTo(bNum);
+  } else if (aMatch != null) {
+    return -1;
+  } else if (bMatch != null) {
+    return 1;
+  }
+
+  return a.name.compareTo(b.name);
+}
+
+List<SongModel> _sortRecursive(List<SongModel> list) {
+  for (var song in list) {
+    if (song.children.isNotEmpty) {
+      song.children = _sortRecursive(song.children);
+    }
+  }
+  list.sort(_sortByName);
+  return list;
+}
+
+/// Everything the background isolate hands back: the sorted tree AND the
+/// pre-built URL lookup, so the main isolate does zero tree-walking.
+class _ParsedSongs {
+  final List<SongModel> tree;
+  final Map<String, Map<AudioServer, String>> lookup;
+  _ParsedSongs(this.tree, this.lookup);
+}
+
+void _buildLookup(
+  Map<String, Map<AudioServer, String>> lookup,
+  List<SongModel> songs, [
+  String? parentId,
+]) {
+  for (final song in songs) {
+    if (song.isAudio && song.urls.isNotEmpty && parentId != null) {
+      final key = '$parentId|${song.name}';
+      lookup[key] = song.urls.map(
+        (serverName, url) =>
+            MapEntry(AudioServer.values.byName(serverName), url),
+      );
+    }
+    if (song.children.isNotEmpty) {
+      _buildLookup(lookup, song.children, song.id);
+    }
+  }
+}
+
+/// Runs entirely on a background isolate: UTF-8 decode + JSON decode + build
+/// the SongModel tree + sort it + build the URL lookup, all in one shot.
+/// Takes raw bytes (not a String) so the main isolate never has to hold or
+/// decode the ~18k-line text at all — only the small binary asset read.
+_ParsedSongs _parseSortAndIndex(Uint8List bytes) {
+  final raw = utf8.decode(bytes);
+  final jsonList = jsonDecode(raw) as List<dynamic>;
+  final songs = jsonList
+      .map<SongModel>((json) => SongModel.fromJson(json))
+      .toList();
+  final sorted = _sortRecursive(songs);
+
+  final lookup = <String, Map<AudioServer, String>>{};
+  _buildLookup(lookup, sorted, 'root');
+
+  return _ParsedSongs(sorted, lookup);
+}
+
+// ---------------------------------------------------------------------------
 
 class SongRepoImpl implements SongRepository {
   final SharedPreferences sharedPreferences;
@@ -27,22 +107,52 @@ class SongRepoImpl implements SongRepository {
   final Box<CachedAudioData> downloadedAudioBox;
   final Box<CachedImageData> imageCacheBox;
   final serverManager = ServerManager();
-  final Map<AudioServer, List<SongModel>> _serverCache = {};
-  final Map<AudioServer, Map<String, String>> _audioUrlLookup = {};
+
+  /// The live song tree. Built once in [initializeServers]. `loadSongs()`
+  /// mutates this in place (via `applyCachedData`) rather than deep-copying
+  /// it — that copy used to cost a full second JSON round-trip through an
+  /// isolate for no benefit, since applyCachedData just re-syncs fields from
+  /// Hive every time anyway and is safe to re-run.
+  List<SongModel> _mergedTree = [];
+
+  /// key = "$parentId|$songName" -> {AudioServer.server1: url, ...}
+  final Map<String, Map<AudioServer, String>> _audioUrlLookup = {};
+
+  SongRepoImpl({
+    required this.sharedPreferences,
+    required this.networkInfo,
+    required this.client,
+    required this.songsBox,
+    required this.downloadedAudioBox,
+    required this.imageCacheBox,
+  });
+
+  /// Loads assets/merged_songs.json (generated by merge_song_servers.py) as
+  /// raw bytes and hands the whole parse/sort/index pipeline to a single
+  /// background isolate call. Call this once at startup before loadSongs().
   Future<void> initializeServers() async {
-    for (final server in AudioServer.values) {
-      final jsonValue = getServerContent(server);
+    final stopwatch = Stopwatch()..start();
 
-      List<SongModel> songs = jsonValue
-          .map<SongModel>((json) => SongModel.fromJson(json))
-          .toList();
+    final data = await rootBundle.load('assets/merged_songs.json');
+    final bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+    debugPrint('[startup] asset read: ${stopwatch.elapsedMilliseconds}ms');
 
-      songs = _sortRecursive(songs);
+    final parsed = await compute(_parseSortAndIndex, bytes);
+    debugPrint(
+      '[startup] parse+sort+index (isolate): ${stopwatch.elapsedMilliseconds}ms',
+    );
 
-      _serverCache[server] = songs;
+    _mergedTree = parsed.tree;
+    _audioUrlLookup
+      ..clear()
+      ..addAll(parsed.lookup);
 
-      buildLookup(server, songs, 'root');
-    }
+    debugPrint(
+      '[startup] initializeServers total: ${stopwatch.elapsedMilliseconds}ms',
+    );
   }
 
   void applyCachedData(List<SongModel> songs) {
@@ -66,33 +176,6 @@ class SongRepoImpl implements SongRepository {
     }
   }
 
-  void buildLookup(
-    AudioServer server,
-    List<SongModel> songs, [
-    String? parentId,
-  ]) {
-    _audioUrlLookup[server] ??= {};
-
-    for (final song in songs) {
-      if (song.isAudio && song.url != null && parentId != null) {
-        final key = '$parentId|${song.name}';
-        _audioUrlLookup[server]![key] = song.url!;
-      }
-
-      if (song.children.isNotEmpty) {
-        buildLookup(server, song.children, song.id);
-      }
-    }
-  }
-
-  SongRepoImpl({
-    required this.sharedPreferences,
-    required this.networkInfo,
-    required this.client,
-    required this.songsBox,
-    required this.downloadedAudioBox,
-    required this.imageCacheBox,
-  });
   @override
   Future<String> changeTheme(String theme) {
     return Future.value(
@@ -105,68 +188,20 @@ class SongRepoImpl implements SongRepository {
     return Future.value(sharedPreferences.getString('theme') ?? 'dark');
   }
 
-  int _sortByName(SongModel a, SongModel b) {
-    // Extract leading numbers if any
-    final regex = RegExp(r'^(\d+)-?');
-    final aMatch = regex.firstMatch(a.name);
-    final bMatch = regex.firstMatch(b.name);
-
-    if (aMatch != null && bMatch != null) {
-      // both have numbers, sort numerically first
-      final aNum = int.parse(aMatch.group(1)!);
-      final bNum = int.parse(bMatch.group(1)!);
-      if (aNum != bNum) return aNum.compareTo(bNum);
-    } else if (aMatch != null) {
-      // a has number, b doesn't → a comes first
-      return -1;
-    } else if (bMatch != null) {
-      // b has number, a doesn't → b comes first
-      return 1;
-    }
-
-    // fallback to lexicographic sort (Amharic or text)
-    return a.name.compareTo(b.name);
-  }
-
-  List<SongModel> _sortRecursive(List<SongModel> list) {
-    for (var song in list) {
-      if (song.children.isNotEmpty) {
-        song.children = _sortRecursive(song.children);
-      }
-    }
-    list.sort(_sortByName);
-    return list;
-  }
-
-  List<SongModel> _sortRecursiveInMain(List<SongModel> list) {
-    for (var song in list) {
-      if (song.children.isNotEmpty) {
-        song.children = _sortRecursiveInMain(song.children);
-      }
-    }
-
-    list.sort(_sortByName);
-    return list;
-  }
-
   @override
   Future<List<SongModel>> loadSongs() async {
     try {
-      final raw = _serverCache[AudioServer.server1];
-
-      if (raw == null) {
-        return Future.error("Failed to load songs from server");
+      if (_mergedTree.isEmpty) {
+        return Future.error(
+          "Songs not initialized — call initializeServers() first",
+        );
       }
 
-      // 🚀 move heavy parsing to background
-      final songs = await compute(
-        (list) => list.map((e) => SongModel.fromJson(e.toJson())).toList(),
-        raw,
-      );
+      final stopwatch = Stopwatch()..start();
 
-      // still main isolate (safe)
-      _sortRecursiveInMain(songs);
-      applyCachedData(songs);
+      // Cheap, O(n) over ~1000 nodes, safe to re-run: re-syncs isDownloaded/
+      // localPath flags straight from the Hive boxes. No isolate needed.
+      applyCachedData(_mergedTree);
 
       final freshRoot = SongModel(
         id: 'root',
@@ -174,22 +209,19 @@ class SongRepoImpl implements SongRepository {
         listHere: true,
         url: null,
         isAudio: false,
-        children: songs,
+        children: _mergedTree,
       );
 
-      if (!songsBox.containsKey('root')) {
-        await songsBox.put('root', freshRoot);
-        return songs;
-      }
+      // Fire-and-forget: the UI already has the songs in hand, no need to
+      // block startup on the Hive disk write completing.
+      unawaited(
+        songsBox
+            .put('root', freshRoot)
+            .catchError((e) => debugPrint('songsBox.put failed: $e')),
+      );
 
-      final cachedRoot = songsBox.get('root')!;
-      if (cachedRoot.children.length != songs.length) {
-        await songsBox.put('root', freshRoot);
-        return songs;
-      }
-
-      await songsBox.put('root', freshRoot);
-      return songs;
+      debugPrint('[startup] loadSongs: ${stopwatch.elapsedMilliseconds}ms');
+      return _mergedTree;
     } catch (e) {
       return Future.error("Error loading songs: $e");
     }
@@ -225,11 +257,14 @@ class SongRepoImpl implements SongRepository {
       return;
     }
 
-    String finalUrl = await getAudioUrlFromServer(
-      serverManager.next(),
-      parent.id,
-      child.name,
-    );
+    final key = '${parent.id}|${child.name}';
+    final urls = _audioUrlLookup[key];
+
+    if (urls == null || urls.isEmpty) {
+      yield Left(ServerFailure(message: "Song not found on any server."));
+      return;
+    }
+
     bool downloaded = false;
 
     /// Helper: download a single URL with progress
@@ -271,9 +306,6 @@ class SongRepoImpl implements SongRepository {
 
         await sink.close();
 
-        // child.isDownloaded = true;
-        // child.audioLocalPath = file.path;
-
         await downloadedAudioBox.put(
           child.id,
           CachedAudioData(songId: child.id, localPath: file.path),
@@ -288,24 +320,38 @@ class SongRepoImpl implements SongRepository {
       }
     }
 
-    // WHICH SERVER TURN
-    await for (final event in downloadStream(
-      parent,
-      child,
-      finalUrl,
-      emitErrors: false,
-    )) {
-      yield event; // emit every progress update
+    // Try up to N servers (N = number of servers configured), starting from
+    // wherever the round-robin index currently is, skipping any server that
+    // doesn't have this particular song. Stops as soon as one succeeds.
+    for (
+      int attempt = 0;
+      attempt < serverManager.servers.length && !downloaded;
+      attempt++
+    ) {
+      final server = serverManager.next();
+      final url = urls[server];
+      if (url == null) continue; // this server doesn't have this song
 
-      final progressValue = event
-          .getOrElse(() => DownloadAudioReport(songModel: parent, progress: 0))
-          .progress;
-      if (progressValue == 100) {
-        downloaded = true;
+      await for (final event in downloadStream(
+        parent,
+        child,
+        url,
+        emitErrors: false,
+      )) {
+        yield event; // emit every progress update
+
+        final progressValue = event
+            .getOrElse(
+              () => DownloadAudioReport(songModel: parent, progress: 0),
+            )
+            .progress;
+        if (progressValue == 100) {
+          downloaded = true;
+        }
       }
     }
 
-    // Both servers failed
+    // All servers failed
     if (!downloaded) {
       yield Left(
         ServerFailure(
@@ -348,7 +394,6 @@ $feedback
 
     try {
       if (imageFile != null) {
-        // Send with photo
         final uri = Uri.parse('https://api.telegram.org/bot$token/sendPhoto');
         final request = http.MultipartRequest('POST', uri);
 
@@ -374,7 +419,6 @@ $feedback
           );
         }
       } else {
-        // Send text only
         final uri = Uri.parse('https://api.telegram.org/bot$token/sendMessage');
         final response = await http.post(
           uri,
@@ -386,7 +430,6 @@ $feedback
         }
       }
     } catch (e) {
-      // Re-throw with user-friendly message
       throw Exception('Failed to send feedback. Please try again.');
     }
   }
@@ -398,10 +441,14 @@ $feedback
   ) async {
     final key = '$parentPath|$audioName';
 
-    final url = _audioUrlLookup[server]?[key];
+    final urls = _audioUrlLookup[key];
+    if (urls == null) {
+      throw Exception("Song not found: $key");
+    }
 
+    final url = urls[server];
     if (url == null) {
-      throw Exception("Audio not found on $server");
+      throw Exception("Audio not found on $server for $key");
     }
 
     return url;
@@ -435,17 +482,4 @@ String decodeAndTrimUrl(String url) {
   final filename = decoded.substring(decoded.lastIndexOf('/') + 1);
   final match = RegExp(r'^(.*)_[^_]+(\.\w+)$').firstMatch(filename);
   return match != null ? '${match.group(1)}${match.group(2)}' : filename;
-}
-
-List<dynamic> getServerContent(AudioServer server) {
-  switch (server) {
-    case AudioServer.server1:
-      return server1Content;
-    case AudioServer.server2:
-      return server2Content;
-    case AudioServer.server3:
-      return server3Content;
-    case AudioServer.server4:
-      return server4Content;
-  }
 }

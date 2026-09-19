@@ -9,7 +9,7 @@ class SongModel extends HiveObject {
   String name;
 
   @HiveField(2)
-  String? url; // remote audio URL
+  String? url; // kept for backward-compat with old cached entries; no longer written
 
   @HiveField(3)
   bool isAudio;
@@ -17,11 +17,11 @@ class SongModel extends HiveObject {
   @HiveField(4)
   bool listHere;
 
-  // runtime only
+  @HiveField(6) // new field — must be a fresh index, not reused
+  Map<String, String> urls; // e.g. {"server1": "...", "server2": "...", ...}
+
   bool isDownloaded = false;
-
   String? audioLocalPath;
-
   String? imageLocalPath;
 
   @HiveField(5)
@@ -31,15 +31,12 @@ class SongModel extends HiveObject {
     required this.id,
     required this.name,
     this.url,
+    this.urls = const {},
     this.isAudio = false,
     this.listHere = false,
-    // this.isDownloaded = false,
-    // this.audioLocalPath,
-    // this.imageLocalPath,
     this.children = const [],
   });
 
-  /// Recursively build SongModel from JSON
   factory SongModel.fromJson(
     Map<String, dynamic> json, [
     String parentPath = '',
@@ -58,11 +55,13 @@ class SongModel extends HiveObject {
       id: json['id'],
       name: json['name'],
       url: json['url'],
+      urls:
+          (json['urls'] as Map?)?.map(
+            (k, v) => MapEntry(k as String, v as String),
+          ) ??
+          {},
       isAudio: json['isAudio'] ?? false,
       listHere: json['listHere'] ?? false,
-      // isDownloaded: json['isDownloaded'] ?? false,
-      // audioLocalPath: json['audioLocalPath'],
-      // imageLocalPath: json['imageLocalPath'],
       children: children,
     );
   }
@@ -72,11 +71,9 @@ class SongModel extends HiveObject {
       'id': id,
       'name': name,
       'url': url,
+      'urls': urls,
       'isAudio': isAudio,
       'listHere': listHere,
-      // 'isDownloaded': isDownloaded,
-      // 'audioLocalPath': audioLocalPath,
-      // 'imageLocalPath': imageLocalPath,
       'children': children.map((e) => e.toJson()).toList(),
     };
   }

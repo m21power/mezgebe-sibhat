@@ -14,8 +14,12 @@ class AdService {
   int get downloadCounter => _downloadCounter;
 
   Future<void> init() async {
-    await MobileAds.instance.initialize();
-    loadInterstitial();
+    try {
+      await MobileAds.instance.initialize();
+      loadInterstitial();
+    } catch (e) {
+      debugPrint('AdMob initialization failed: $e');
+    }
   }
 
   void loadInterstitial() {

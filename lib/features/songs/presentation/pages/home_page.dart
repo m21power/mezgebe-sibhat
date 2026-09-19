@@ -63,9 +63,16 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _checkForUpdate();
-    _bannerAd = AdService().createBanner((ad) {
-      setState(() {
-        _isAdLoaded = true; // Set flag to true only when loaded
+
+    // Wait for the first frame to render before touching the ad SDK — that's
+    // where the multi-second Davey frames were coming from, not song loading.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _bannerAd = AdService().createBanner((ad) {
+        if (mounted) {
+          setState(() {
+            _isAdLoaded = true;
+          });
+        }
       });
     });
   }
