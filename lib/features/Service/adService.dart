@@ -83,4 +83,24 @@ class AdService {
       ),
     )..load();
   }
+
+  // --- NATIVE LOGIC ---
+  NativeAd createNativeAd({
+    required void Function(NativeAd ad) onLoaded,
+    required void Function(LoadAdError error) onFailed,
+  }) {
+    final ad = NativeAd(
+      adUnitId: 'ca-app-pub-7716592682174884/2297587701',
+      factoryId: 'songListNative', // whatever you registered
+      request: const AdRequest(),
+      listener: NativeAdListener(
+        onAdLoaded: (ad) => onLoaded(ad as NativeAd),
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          onFailed(error);
+        },
+      ),
+    )..load();
+    return ad;
+  }
 }

@@ -227,6 +227,25 @@ class SongRepoImpl implements SongRepository {
     }
   }
 
+  /// ---------------------------------------------------------------------
+  /// FIX: images sometimes failing to render after the app is closed and
+  /// reopened.
+  ///
+  /// Root cause: this method used to store the `imagePath` it was handed
+  /// as-is. That path comes straight from the image picker, which returns
+  /// a file living in a TEMPORARY/CACHE directory (NSTemporaryDirectory on
+  /// iOS, a cache dir on Android). The OS is free to wipe that directory
+  /// at any time — on app relaunch, under memory pressure, etc — and there
+  /// is no guarantee it will still be there later. When it gets swept,
+  /// `File(imageLocalPath).exists()` starts returning false and the UI
+  /// silently falls back to the placeholder, which is exactly the
+  /// "sometimes doesn't render" behavior.
+  ///
+  /// Fix: copy the picked file into the app's Documents directory (the
+  /// same durable location already used for downloaded audio) before
+  /// caching its path. Documents directory content persists across app
+  /// restarts and isn't cleared by the OS.
+  /// ---------------------------------------------------------------------
   @override
   Future<List<SongModel>> saveImageLocally(
     SongModel song,
@@ -236,11 +255,29 @@ class SongRepoImpl implements SongRepository {
       final root = songsBox.get('root');
       if (root == null) return Future.error("Root not found");
 
+      final sourceFile = File(imagePath);
+      if (!await sourceFile.exists()) {
+        return Future.error("Picked image no longer exists: $imagePath");
+      }
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final imagesDir = Directory('${docsDir.path}/Images');
+      await imagesDir.create(recursive: true);
+
+      // Keep the original extension, default to .jpg if there isn't one.
+      final dot = imagePath.lastIndexOf('.');
+      final ext = dot != -1 ? imagePath.substring(dot) : '.jpg';
+
+      // Name the file after the song id so re-picking an image for the
+      // same song overwrites its old file instead of accumulating orphans.
+      final destPath = '${imagesDir.path}/${song.id}$ext';
+      final destFile = await sourceFile.copy(destPath);
+
       await imageCacheBox.put(
         song.id,
-        CachedImageData(songId: song.id, imagePath: imagePath),
+        CachedImageData(songId: song.id, imagePath: destFile.path),
       );
-      song.imageLocalPath = imagePath;
+      song.imageLocalPath = destFile.path;
       return Future.value(root.children);
     } catch (e) {
       return Future.error("Error saving image locally: $e");

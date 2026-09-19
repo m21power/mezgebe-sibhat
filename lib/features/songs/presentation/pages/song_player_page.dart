@@ -12,6 +12,48 @@ import 'package:mezgebe_sibhat/features/songs/presentation/widgets/pick_image.da
 
 import '../../../Service/adService.dart';
 
+/// ---------------------------------------------------------------------
+/// FIX #3: Natural / alphanumeric sort helper.
+///
+/// Splits a name like "A.10_something" into alternating text/number
+/// chunks (["A.", "10", "_something"]) so that numeric chunks are
+/// compared as numbers instead of as strings. This makes:
+///   A.1, A.2, ..., A.10   (instead of A.1, A.10, A.2 ...)
+///   B.1, B.2, ..., B.12
+///   GMK1, GMK2, ..., GMK10
+/// sort in the order a human expects, regardless of the exact prefix
+/// pattern used (letter+number, number-only, letter.number_amharic, etc).
+/// ---------------------------------------------------------------------
+int _naturalCompare(String a, String b) {
+  final regExp = RegExp(r'(\d+|\D+)');
+  final aParts = regExp.allMatches(a).map((m) => m.group(0)!).toList();
+  final bParts = regExp.allMatches(b).map((m) => m.group(0)!).toList();
+
+  final len = aParts.length < bParts.length ? aParts.length : bParts.length;
+  for (var i = 0; i < len; i++) {
+    final aPart = aParts[i];
+    final bPart = bParts[i];
+    final aNum = int.tryParse(aPart);
+    final bNum = int.tryParse(bPart);
+
+    if (aNum != null && bNum != null) {
+      final cmp = aNum.compareTo(bNum);
+      if (cmp != 0) return cmp;
+    } else {
+      final cmp = aPart.toLowerCase().compareTo(bPart.toLowerCase());
+      if (cmp != 0) return cmp;
+    }
+  }
+  return aParts.length.compareTo(bParts.length);
+}
+
+/// Sorts a SongModel's children in place using the natural comparator
+/// above, and returns the same model for convenient chaining.
+SongModel _naturallySorted(SongModel model) {
+  model.children.sort((a, b) => _naturalCompare(a.name, b.name));
+  return model;
+}
+
 class SongPlayerPage extends StatefulWidget {
   final SongModel song;
   const SongPlayerPage({super.key, required this.song});
@@ -39,10 +81,18 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   bool isLoading = false;
   final AudioPlayer _tempPlayer = AudioPlayer();
 
+  /// FIX #1: guards against PageView.onPageChanged firing (and re-triggering
+  /// playback) for every intermediate page while we are animating the
+  /// PageController programmatically (e.g. from a list-tile tap that jumps
+  /// several songs ahead/behind). While this is true, onPageChanged should
+  /// be ignored — only a real user swipe should drive playback from there.
+  bool _isProgrammaticPageChange = false;
+
   @override
   void initState() {
     super.initState();
-    songModel = widget.song;
+    // FIX #3: sort children naturally as soon as we receive the model.
+    songModel = _naturallySorted(widget.song);
     _audioPlayer = AudioPlayer();
     _pageController = PageController(initialPage: currentIndex);
     _audioPlayer.durationStream.listen((d) {
@@ -77,6 +127,54 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     AdService().loadInterstitial();
   }
 
+  // --- Native ad insertion helpers (1 ad every 9 songs) ---
+  static const int _adInterval = 9;
+
+  bool _isAdSlot(int listIndex) =>
+      listIndex != 0 && (listIndex + 1) % (_adInterval + 1) == 0;
+
+  int _itemCountWithAds(int songCount) {
+    if (songCount <= _adInterval) return songCount;
+    final adCount = songCount ~/ _adInterval;
+    return songCount + adCount;
+  }
+
+  int _songIndexForListIndex(int listIndex) {
+    final adsBefore = (listIndex + 1) ~/ (_adInterval + 1);
+    return listIndex - adsBefore;
+  }
+
+  final Map<int, NativeAd> _nativeAds = {};
+  final Set<int> _failedAdSlots = {};
+
+  Widget _buildNativeAdTile(int listIndex) {
+    if (_failedAdSlots.contains(listIndex)) {
+      return const SizedBox.shrink(); // failed — collapse the slot, no gap
+    }
+
+    if (!_nativeAds.containsKey(listIndex)) {
+      AdService().createNativeAd(
+        onLoaded: (nativeAd) {
+          if (!mounted) {
+            nativeAd.dispose();
+            return;
+          }
+          setState(() => _nativeAds[listIndex] = nativeAd);
+        },
+        onFailed: (_) {
+          if (mounted) setState(() => _failedAdSlots.add(listIndex));
+        },
+      );
+      return const SizedBox.shrink(); // nothing to show until it loads
+    }
+
+    return Container(
+      height: 120,
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+      child: AdWidget(ad: _nativeAds[listIndex]!),
+    );
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -84,6 +182,9 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     _positionSub.cancel();
     _audioPlayer.dispose();
     _tempPlayer.dispose();
+    for (final ad in _nativeAds.values) {
+      ad.dispose(); // NEW
+    }
     super.dispose();
   }
 
@@ -104,7 +205,16 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     isPlaying ? await _audioPlayer.pause() : await _audioPlayer.play();
   }
 
-  Future<void> playSongAtIndex(int index) async {
+  /// FIX #1: added an [animatePage] flag.
+  /// - When called from a tap (list tile / next / prev), we DO want to move
+  ///   the PageView, so animatePage stays true (default).
+  /// - When called *from* onPageChanged (the user swiped and already moved
+  ///   the page themselves), we pass animatePage: false so we don't try to
+  ///   re-animate a page we're already on.
+  /// While the programmatic animation runs, _isProgrammaticPageChange is
+  /// set so intermediate onPageChanged callbacks are ignored — this is
+  /// what stops the "plays every song in between" behavior.
+  Future<void> playSongAtIndex(int index, {bool animatePage = true}) async {
     if (index < 0 || index >= songModel!.children.length) return;
 
     setState(() {
@@ -116,12 +226,14 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     });
 
     // CRITICAL: Tell the PageView to move to the new image
-    if (_pageController.hasClients) {
-      _pageController.animateToPage(
+    if (animatePage && _pageController.hasClients) {
+      _isProgrammaticPageChange = true;
+      await _pageController.animateToPage(
         index,
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
       );
+      _isProgrammaticPageChange = false;
     }
 
     final song = songModel!.children[index];
@@ -151,6 +263,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   BannerAd? _bannerAd;
   bool _isAdLoaded = false;
   bool isAudioDownloading = false;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -181,9 +294,25 @@ class _SongPlayerPageState extends State<SongPlayerPage>
             }
             return false;
           },
-          listener: (context, songState) {
+          listener: (context, songState) async {
             if (songState is AudioDownloadSuccessfully) {
-              setState(() => songModel = songState.songModel);
+              // FIX #3: keep the list naturally sorted after every model refresh.
+              setState(() => songModel = _naturallySorted(songState.songModel));
+
+              // FIX #2: previously we only updated the model here and waited
+              // for a *second* tap to notice the song was now downloaded and
+              // start playing it. Now we immediately start playback for the
+              // song that just finished downloading, if it's still the one
+              // selected on screen.
+              final downloadedChild = songModel!.children[currentIndex];
+              if (downloadedChild.isDownloaded &&
+                  downloadedChild.audioLocalPath != null) {
+                final localUrl = downloadedChild.audioLocalPath!;
+                await _audioPlayer.stop();
+                await _audioPlayer.setFilePath(localUrl, tag: localUrl);
+                await _audioPlayer.setSpeed(playbackSpeed);
+                await _audioPlayer.play();
+              }
 
               final adService = AdService();
               adService.incrementDownloadCount();
@@ -194,19 +323,31 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                 if (adService.interstitialAd != null) {
                   _audioPlayer.pause();
 
-                  adService.interstitialAd!.fullScreenContentCallback =
-                      FullScreenContentCallback(
-                        onAdDismissedFullScreenContent: (ad) {
-                          ad.dispose();
-                          adService.loadInterstitial();
-                          _audioPlayer.play();
-                        },
-                        onAdFailedToShowFullScreenContent: (ad, error) {
-                          ad.dispose();
-                          adService.loadInterstitial();
-                          _audioPlayer.play();
-                        },
-                      );
+                  adService
+                      .interstitialAd!
+                      .fullScreenContentCallback = FullScreenContentCallback(
+                    onAdDismissedFullScreenContent: (ad) async {
+                      ad.dispose();
+                      adService.loadInterstitial();
+                      // FIX: closing a full-screen interstitial takes the
+                      // OS a moment to hand audio focus back to the app.
+                      // Calling play() immediately can silently no-op
+                      // because focus hasn't returned yet — waiting a
+                      // beat before resuming fixes that.
+                      await Future.delayed(const Duration(milliseconds: 400));
+                      if (mounted) {
+                        await _audioPlayer.play();
+                      }
+                    },
+                    onAdFailedToShowFullScreenContent: (ad, error) async {
+                      ad.dispose();
+                      adService.loadInterstitial();
+                      await Future.delayed(const Duration(milliseconds: 400));
+                      if (mounted) {
+                        await _audioPlayer.play();
+                      }
+                    },
+                  );
 
                   adService.interstitialAd!.show();
                   adService.clearInterstitial();
@@ -371,10 +512,16 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                           child: ListView.builder(
                             padding: const EdgeInsets.only(top: 20, bottom: 20),
-                            itemCount: songModel!.children.length,
+                            itemCount: _itemCountWithAds(
+                              songModel!.children.length,
+                            ),
                             itemBuilder: (context, index) {
-                              final song = songModel!.children[index];
-                              final isSelected = index == currentIndex;
+                              if (_isAdSlot(index)) {
+                                return _buildNativeAdTile(index);
+                              }
+                              final songIndex = _songIndexForListIndex(index);
+                              final song = songModel!.children[songIndex];
+                              final isSelected = songIndex == currentIndex;
                               return _buildListTile(song, isSelected, theme);
                             },
                           ),
@@ -507,6 +654,8 @@ class _SongPlayerPageState extends State<SongPlayerPage>
         borderRadius: BorderRadius.circular(20),
       ),
       child: ListTile(
+        // FIX #1: this already jumped directly by index — the bug was
+        // downstream in playSongAtIndex/onPageChanged, now fixed above.
         onTap: () => playSongAtIndex(songModel!.children.indexOf(song)),
         leading: Icon(
           isSelected ? Icons.equalizer_rounded : Icons.music_note_rounded,
@@ -554,7 +703,15 @@ class _SongPlayerPageState extends State<SongPlayerPage>
       controller: _pageController,
       physics: const BouncingScrollPhysics(),
       itemCount: songModel!.children.length,
-      onPageChanged: (index) => playSongAtIndex(index),
+      // FIX #1: ignore page-change events that were caused by our own
+      // programmatic animateToPage() call (e.g. from tapping a list item
+      // several songs away). Only a genuine user swipe should call
+      // playSongAtIndex from here, and it does so without re-animating
+      // the page (it's already there).
+      onPageChanged: (index) {
+        if (_isProgrammaticPageChange) return;
+        playSongAtIndex(index, animatePage: false);
+      },
       itemBuilder: (context, index) {
         bool isActive = index == currentIndex;
         final currentChild = songModel!.children[index];
