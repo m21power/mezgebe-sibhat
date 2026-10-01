@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mezgebe_sibhat/dependency_injection.dart';
 import 'package:mezgebe_sibhat/features/Service/adService.dart';
+import 'package:mezgebe_sibhat/features/Service/app_lifecycle_reactor.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/start_up_page.dart';
 import 'package:mezgebe_sibhat/theme/theme.dart';
@@ -26,8 +27,29 @@ void main() async {
   });
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final AppLifecycleReactor _appLifecycleReactor;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _appLifecycleReactor = AppLifecycleReactor();
+    _appLifecycleReactor.start();
+  }
+
+  @override
+  void dispose() {
+    _appLifecycleReactor.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

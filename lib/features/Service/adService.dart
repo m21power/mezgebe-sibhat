@@ -7,6 +7,12 @@ class AdService {
   AdService._internal();
 
   InterstitialAd? _interstitialAd;
+  AppOpenAd? _appOpenAd;
+  DateTime? _appOpenAdLoadTime;
+  bool _isShowingAppOpenAd = false;
+
+  AppOpenAd? get appOpenAd => _appOpenAd;
+
   int _downloadCounter = 0;
 
   // Getter to check if ad exists from the UI
@@ -16,7 +22,9 @@ class AdService {
   Future<void> init() async {
     try {
       await MobileAds.instance.initialize();
+
       loadInterstitial();
+      loadAppOpenAd();
     } catch (e) {
       debugPrint('AdMob initialization failed: $e');
     }
@@ -102,5 +110,94 @@ class AdService {
       ),
     )..load();
     return ad;
+  }
+
+  // --- APP OPEN LOGIC ---
+  void loadAppOpenAd() {
+    if (_appOpenAd != null) {
+      return;
+    }
+
+    AppOpenAd.load(
+      adUnitId: 'ca-app-pub-7716592682174884/7031316272',
+      request: const AdRequest(),
+      adLoadCallback: AppOpenAdLoadCallback(
+        onAdLoaded: (ad) {
+          _appOpenAd = ad;
+          _appOpenAdLoadTime = DateTime.now();
+
+          debugPrint('App Open Ad Loaded Successfully');
+        },
+        onAdFailedToLoad: (error) {
+          _appOpenAd = null;
+          _appOpenAdLoadTime = null;
+
+          debugPrint('App Open Ad failed to load: $error');
+        },
+      ),
+    );
+  }
+
+  void showAppOpenAdIfAvailable() {
+    final ad = _appOpenAd;
+
+    if (ad == null) {
+      debugPrint('App Open Ad is not ready yet.');
+      loadAppOpenAd();
+      return;
+    }
+
+    if (_isShowingAppOpenAd) {
+      return;
+    }
+
+    // App Open ads expire after 4 hours.
+    if (_appOpenAdLoadTime == null ||
+        DateTime.now().difference(_appOpenAdLoadTime!) >
+            const Duration(hours: 4)) {
+      debugPrint('App Open Ad expired. Loading a new one.');
+
+      ad.dispose();
+      _appOpenAd = null;
+      _appOpenAdLoadTime = null;
+
+      loadAppOpenAd();
+      return;
+    }
+
+    _isShowingAppOpenAd = true;
+
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdShowedFullScreenContent: (ad) {
+        debugPrint('App Open Ad showed');
+      },
+
+      onAdDismissedFullScreenContent: (ad) {
+        debugPrint('App Open Ad dismissed');
+
+        ad.dispose();
+
+        _appOpenAd = null;
+        _appOpenAdLoadTime = null;
+        _isShowingAppOpenAd = false;
+
+        // Prepare the next one.
+        loadAppOpenAd();
+      },
+
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint('App Open Ad failed to show: $error');
+
+        ad.dispose();
+
+        _appOpenAd = null;
+        _appOpenAdLoadTime = null;
+        _isShowingAppOpenAd = false;
+
+        loadAppOpenAd();
+      },
+    );
+
+    ad.show();
   }
 }

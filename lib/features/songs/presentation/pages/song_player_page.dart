@@ -128,7 +128,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   }
 
   // --- Native ad insertion helpers (1 ad every 9 songs) ---
-  static const int _adInterval = 9;
+  static const int _adInterval = 15;
 
   bool _isAdSlot(int listIndex) =>
       listIndex != 0 && (listIndex + 1) % (_adInterval + 1) == 0;
@@ -271,39 +271,100 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
     return SafeArea(
       child: Scaffold(
-        extendBodyBehindAppBar: true, // Transparent AppBar effect
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: Text(
-            widget.song.name,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
+          toolbarHeight:
+              68, // slightly taller to fit two lines — costs nothing, it floats over the body
+          titleSpacing: 0,
           centerTitle: true,
+          // Scrim so the title stays legible over any artwork color
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.45),
+                  Colors.black.withOpacity(0.0),
+                ],
+              ),
+            ),
+          ),
           leading: IconButton(
             onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 35),
+            icon: const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 35,
+              color: Colors.white,
+            ),
+          ),
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.song.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.8,
+                  color: Colors.white.withOpacity(0.75),
+                ),
+              ),
+              const SizedBox(height: 3),
+              // Animated so the title glides/fades in every time the track changes
+              ClipRect(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.4),
+                        end: Offset.zero,
+                      ).animate(anim),
+                      child: child,
+                    ),
+                  ),
+                  child: Text(
+                    songModel!.children[currentIndex].name,
+                    key: ValueKey(currentIndex),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      letterSpacing: 0.4,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 6,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         body: BlocConsumer<SongBloc, SongState>(
           listenWhen: (previous, current) {
             if (current is AudioDownloadSuccessfully) {
-              // Only trigger if the previous state wasn't success OR
-              // if the newly downloaded song is different from the last one
               return previous is! AudioDownloadSuccessfully;
             }
             return false;
           },
           listener: (context, songState) async {
             if (songState is AudioDownloadSuccessfully) {
-              // FIX #3: keep the list naturally sorted after every model refresh.
               setState(() => songModel = _naturallySorted(songState.songModel));
 
-              // FIX #2: previously we only updated the model here and waited
-              // for a *second* tap to notice the song was now downloaded and
-              // start playing it. Now we immediately start playback for the
-              // song that just finished downloading, if it's still the one
-              // selected on screen.
               final downloadedChild = songModel!.children[currentIndex];
               if (downloadedChild.isDownloaded &&
                   downloadedChild.audioLocalPath != null) {
@@ -319,7 +380,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
               debugPrint("Download Count: ${adService.downloadCounter}");
 
-              if (adService.downloadCounter >= 2) {
+              if (adService.downloadCounter >= 3) {
                 if (adService.interstitialAd != null) {
                   _audioPlayer.pause();
 
@@ -329,11 +390,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                     onAdDismissedFullScreenContent: (ad) async {
                       ad.dispose();
                       adService.loadInterstitial();
-                      // FIX: closing a full-screen interstitial takes the
-                      // OS a moment to hand audio focus back to the app.
-                      // Calling play() immediately can silently no-op
-                      // because focus hasn't returned yet — waiting a
-                      // beat before resuming fixes that.
                       await Future.delayed(const Duration(milliseconds: 400));
                       if (mounted) {
                         await _audioPlayer.play();
@@ -353,7 +409,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                   adService.clearInterstitial();
                   adService.resetDownloadCount();
                 } else {
-                  // Reset even if ad isn't ready so the next pair triggers it
                   adService.resetDownloadCount();
                   adService.loadInterstitial();
                 }
@@ -374,10 +429,11 @@ class _SongPlayerPageState extends State<SongPlayerPage>
               ),
               child: Column(
                 children: [
-                  const SizedBox(height: 100),
-                  // 1. Image Viewer with soft shadow
-                  Expanded(
-                    flex: 3,
+                  SizedBox(height: MediaQuery.of(context).padding.top),
+
+                  // 1. Image Viewer
+                  AspectRatio(
+                    aspectRatio: 1.1,
                     child: imageWidget(
                       theme,
                       songModel!.name,
@@ -386,83 +442,57 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                     ),
                   ),
 
-                  // 2. Song Info
+                  // 2. Slider — song name now lives in the AppBar, so this
+                  // block is just the scrubber, tight and compact
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 30,
-                      vertical: 10,
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          songModel!.children[currentIndex].name,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.1,
-                          ),
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "መዝገበ ስብሐት",
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.primaryColor.withOpacity(0.7),
-                          ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 12,
                         ),
-                      ],
-                    ),
-                  ),
-
-                  // 3. Slider Section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      children: [
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 4,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 7,
-                            ),
-                            overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 14,
-                            ),
-                            activeTrackColor: theme.primaryColor,
-                            inactiveTrackColor: theme.primaryColor.withOpacity(
-                              0.15,
+                        activeTrackColor: theme.primaryColor,
+                        inactiveTrackColor: theme.primaryColor.withOpacity(
+                          0.15,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            formatDuration(currentPosition),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.textTheme.labelSmall?.color
+                                  ?.withOpacity(0.6),
                             ),
                           ),
-                          child: Slider(
-                            value: progress.clamp(0.0, 1.0),
-                            onChanged: (value) =>
-                                setState(() => progress = value),
-                            onChangeEnd: (value) =>
-                                _audioPlayer.seek(totalDuration * value),
+                          Expanded(
+                            child: Slider(
+                              value: progress.clamp(0.0, 1.0),
+                              onChanged: (value) =>
+                                  setState(() => progress = value),
+                              onChangeEnd: (value) =>
+                                  _audioPlayer.seek(totalDuration * value),
+                            ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                formatDuration(currentPosition),
-                                style: theme.textTheme.labelMedium,
-                              ),
-                              Text(
-                                formatDuration(totalDuration),
-                                style: theme.textTheme.labelMedium,
-                              ),
-                            ],
+                          Text(
+                            formatDuration(totalDuration),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.textTheme.labelSmall?.color
+                                  ?.withOpacity(0.6),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
 
-                  // 4. Main Controls Row
+                  // 3. Main Controls Row
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -472,25 +502,24 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                             (currentIndex - 1 + songModel!.children.length) %
                                 songModel!.children.length,
                           ),
-                          size: 40,
+                          size: 36,
                         ),
-                        const SizedBox(width: 25),
+                        const SizedBox(width: 20),
                         _buildMainPlayButton(theme, songState),
-                        const SizedBox(width: 25),
+                        const SizedBox(width: 20),
                         _buildPlaybackAction(
                           Icons.skip_next_rounded,
                           () => playSongAtIndex(
                             (currentIndex + 1) % songModel!.children.length,
                           ),
-                          size: 40,
+                          size: 36,
                         ),
                       ],
                     ),
                   ),
 
-                  // 5. Glassmorphic Bottom List
+                  // 4. Glassmorphic Bottom List
                   Expanded(
-                    flex: 2,
                     child: Container(
                       margin: const EdgeInsets.only(top: 20),
                       decoration: BoxDecoration(
@@ -539,7 +568,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                 child: Container(
                   width: double.infinity,
                   height: _bannerAd!.size.height.toDouble(),
-                  // MATCH THE PLAYER PAGE GRADIENT END COLOR
                   color: isDark ? const Color(0xFF16213E) : Colors.white,
                   alignment: Alignment.center,
                   child: AdWidget(ad: _bannerAd!),
@@ -572,22 +600,26 @@ class _SongPlayerPageState extends State<SongPlayerPage>
         final currentChild = songModel!.children[currentIndex];
 
         if (songState is AudioDownloadingFetchingState) {
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              CircularProgressIndicator(
-                value: songState.progress / 100,
-                strokeWidth: 5,
-                color: theme.primaryColor,
-              ),
-              Text(
-                "${songState.progress.toInt()}%",
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+          return SizedBox(
+            height: 64,
+            width: 64,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: songState.progress / 100,
+                  strokeWidth: 4,
+                  color: theme.primaryColor,
                 ),
-              ),
-            ],
+                Text(
+                  "${songState.progress.toInt()}%",
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
           );
         }
 
@@ -613,28 +645,31 @@ class _SongPlayerPageState extends State<SongPlayerPage>
             }
           },
           child: Container(
-            height: 75,
-            width: 75,
+            height: 64,
+            width: 64,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: theme.primaryColor,
               boxShadow: [
                 BoxShadow(
                   color: theme.primaryColor.withOpacity(0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
             child: songState is AudioDownloadRequestedState
-                ? CircularProgressIndicator(strokeWidth: 3, color: Colors.white)
+                ? const CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Colors.white,
+                  )
                 : Icon(
                     currentChild.isDownloaded && exists
                         ? (isPlaying
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded)
                         : Icons.download_rounded,
-                    size: 45,
+                    size: 38,
                     color: Colors.white,
                   ),
           ),
