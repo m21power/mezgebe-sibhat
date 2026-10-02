@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:in_app_update/in_app_update.dart';
@@ -10,6 +11,20 @@ import 'package:mezgebe_sibhat/features/songs/presentation/pages/donation_card.d
 import 'package:mezgebe_sibhat/theme/theme.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/song_player_page.dart';
 
+// ---------------------------------------------------------------------
+// Small design helpers
+// ---------------------------------------------------------------------
+Color _shade(Color c, double delta) {
+  final hsl = HSLColor.fromColor(c);
+  return hsl.withLightness((hsl.lightness + delta).clamp(0.0, 1.0)).toColor();
+}
+
+LinearGradient _gradientFor(Color base) => LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [_shade(base, 0.08), _shade(base, -0.08)],
+);
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -18,6 +33,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const double _headerExpandedHeight = 140;
+
   Set<int> expandedFolders = {};
 
   bool isExpanded(SongModel song) =>
@@ -88,93 +105,117 @@ class _HomePageState extends State<HomePage> {
     final songState = context.watch<SongBloc>().state;
     final theme = Theme.of(context);
     final isDarkMode = !songState.isLightTheme;
+    final songs = songState.songs;
+    final primary = theme.primaryColor;
 
     return Theme(
       data: songState.isLightTheme ? AppThemes.lightTheme : AppThemes.darkTheme,
       child: SafeArea(
         child: Scaffold(
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDarkMode
-                    ? [const Color(0xFF0F1226), const Color(0xFF161B33)]
-                    : [Colors.white, const Color(0xFFF0F2F8)],
+          body: Stack(
+            children: [
+              // Background gradient
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: isDarkMode
+                          ? [const Color(0xFF0F1226), const Color(0xFF161B33)]
+                          : [Colors.white, const Color(0xFFF0F2F8)],
+                    ),
+                  ),
+                ),
               ),
-            ),
-            child: CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  expandedHeight: 120,
-                  floating: true,
-                  pinned: true,
-                  elevation: 0,
-                  centerTitle: true,
-                  backgroundColor: Colors.transparent,
-                  flexibleSpace: FlexibleSpaceBar(
-                    centerTitle: true,
-                    title: GestureDetector(
-                      onTap: () {
-                        // MobileAds.instance.openAdInspector((error) {
-                        //   if (error != null) {
-                        //     debugPrint('Ad Inspector error: ${error.message}');
-                        //   } else {
-                        //     debugPrint('Ad Inspector closed.');
-                        //   }
-                        // });
-                      },
-                      child: Text(
-                        "መዝገበ ስብሐት",
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.1,
+
+              // Soft ambient glow in the top-right corner
+              Positioned(
+                top: -90,
+                right: -70,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 280,
+                    height: 280,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          primary.withOpacity(isDarkMode ? 0.28 : 0.16),
+                          primary.withOpacity(0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              CustomScrollView(
+                slivers: [
+                  _buildHeader(theme, isDarkMode, songs.length),
+
+                  // Section label
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 6, 22, 2),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Collections',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: primary.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${songs.length}',
+                              style: TextStyle(
+                                color: primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _FadeSlideIn(
+                          index: index,
+                          child: buildSongItem(songs[index], theme, isDarkMode),
                         ),
+                        childCount: songs.length,
                       ),
                     ),
                   ),
-                  actions: [
-                    IconButton(
-                      icon: const Icon(Icons.favorite, color: Colors.redAccent),
-                      onPressed: () => showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        builder: (_) => const DonationSheet(),
-                      ),
-                    ),
-                    _buildMenu(isDarkMode),
-                  ],
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) => buildSongItem(
-                        songState.songs[index],
-                        theme,
-                        isDarkMode,
-                      ),
-                      childCount: songState.songs.length,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
           bottomNavigationBar: (_isAdLoaded && _bannerAd != null)
               ? SafeArea(
-                  // 1. Prevents clipping by system buttons/notches
                   child: Container(
-                    // 2. Use double.infinity to ensure it doesn't crop horizontally
                     width: double.infinity,
-                    // 3. Force the exact height AdMob expects for 'AdSize.banner'
                     height: _bannerAd!.size.height.toDouble(),
                     decoration: BoxDecoration(
                       color: isDarkMode
                           ? const Color(0xFF161B33)
                           : const Color(0xFFF0F2F8),
-                      // 4. Subtle border to separate it from the content
                       border: Border(
                         top: BorderSide(
                           color: isDarkMode ? Colors.white10 : Colors.black12,
@@ -192,32 +233,176 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Header: big title that collapses into a compact bar
+  // ---------------------------------------------------------------------
+  Widget _buildHeader(ThemeData theme, bool isDarkMode, int count) {
+    final primary = theme.primaryColor;
+    final barColor = isDarkMode ? const Color(0xFF0F1226) : Colors.white;
+
+    final titleGradient = LinearGradient(
+      colors: isDarkMode
+          ? [Colors.white, _shade(primary, 0.25)]
+          : [const Color(0xFF1B1F3B), primary],
+    );
+
+    return SliverAppBar(
+      expandedHeight: _headerExpandedHeight,
+      floating: true,
+      pinned: true,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      backgroundColor: Colors.transparent,
+      automaticallyImplyLeading: false,
+      flexibleSpace: LayoutBuilder(
+        builder: (context, c) {
+          // 1 = fully expanded, 0 = fully collapsed
+          final t =
+              ((c.maxHeight - kToolbarHeight) /
+                      (_headerExpandedHeight - kToolbarHeight))
+                  .clamp(0.0, 1.0);
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // Solid bar fades in as the header collapses
+              Container(color: barColor.withOpacity((1 - t) * 0.94)),
+
+              // Large title (expanded)
+              Positioned(
+                left: 22,
+                bottom: 16,
+                child: Opacity(
+                  opacity: t,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AUDIO LIBRARY',
+                        style: TextStyle(
+                          color: primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ShaderMask(
+                        shaderCallback: (rect) => titleGradient.createShader(
+                          Rect.fromLTWH(0, 0, rect.width, rect.height),
+                        ),
+                        child: Text(
+                          'መዝገበ ስብሐት',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Compact title (collapsed)
+              Positioned(
+                left: 22,
+                top: 0,
+                height: kToolbarHeight,
+                child: Opacity(
+                  opacity: 1 - t,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'መዝገበ ስብሐት',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        // Donate
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => const DonationSheet(),
+            );
+          },
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withOpacity(0.12),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.redAccent.withOpacity(0.25)),
+            ),
+            child: const Icon(
+              Icons.favorite_rounded,
+              color: Colors.redAccent,
+              size: 20,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _buildMenu(isDarkMode),
+        const SizedBox(width: 14),
+      ],
+    );
+  }
+
   Widget _buildMenu(bool isDarkMode) {
     final theme = Theme.of(context);
     final iconColor = isDarkMode ? Colors.white70 : Colors.black87;
 
+    Widget menuIcon(IconData icon, Color color) => Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Icon(icon, color: color, size: 19),
+    );
+
     return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
       icon: Container(
-        padding: const EdgeInsets.all(8),
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
           color: isDarkMode
-              ? Colors.white.withOpacity(0.05)
+              ? Colors.white.withOpacity(0.07)
               : Colors.black.withOpacity(0.05),
           shape: BoxShape.circle,
+          border: Border.all(
+            color: isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05),
+          ),
         ),
-        child: Icon(Icons.more_vert_rounded, color: iconColor),
+        child: Icon(Icons.more_vert_rounded, color: iconColor, size: 20),
       ),
-      offset: const Offset(0, 55), // Positioned slightly lower
-      elevation: 8,
-      // Using a more pronounced curve for a modern feel
+      offset: const Offset(0, 52),
+      elevation: 10,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         side: BorderSide(
           color: isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05),
           width: 1,
         ),
       ),
-      // Background color of the menu itself
       color: isDarkMode ? const Color(0xFF1A1F3D) : Colors.white,
       onSelected: (value) {
         if (value == 'about') {
@@ -236,12 +421,11 @@ class _HomePageState extends State<HomePage> {
           value: 'theme',
           child: Row(
             children: [
-              Icon(
+              menuIcon(
                 isDarkMode
-                    ? Icons.wb_sunny_outlined
-                    : Icons.nightlight_round_outlined,
-                color: isDarkMode ? Colors.orangeAccent : Colors.indigo,
-                size: 22,
+                    ? Icons.wb_sunny_rounded
+                    : Icons.nightlight_round_rounded,
+                isDarkMode ? Colors.orangeAccent : Colors.indigo,
               ),
               const SizedBox(width: 12),
               Text(
@@ -253,16 +437,12 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        const PopupMenuDivider(height: 1), // Adds a nice clean line
+        const PopupMenuDivider(height: 1),
         PopupMenuItem(
           value: 'about',
           child: Row(
             children: [
-              const Icon(
-                Icons.info_outline_rounded,
-                color: Colors.blueAccent,
-                size: 22,
-              ),
+              menuIcon(Icons.info_rounded, Colors.blueAccent),
               const SizedBox(width: 12),
               Text(
                 'About App',
@@ -277,105 +457,284 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Collection card (recursive — children appear in an indented branch)
+  // ---------------------------------------------------------------------
   Widget buildSongItem(
     SongModel song,
     ThemeData theme,
     bool isDarkMode, {
-    double indent = 0,
+    int depth = 0,
   }) {
     final expanded = isExpanded(song);
+    final primary = theme.primaryColor;
+
+    final hasAudioChildren = song.children.any((child) => child.isAudio);
+    final isExpandable = song.listHere && !hasAudioChildren;
+    final audioCount = song.children.where((c) => c.isAudio).length;
+
+    String? subtitle;
+    if (hasAudioChildren) {
+      subtitle = '$audioCount ${audioCount == 1 ? 'track' : 'tracks'}';
+    } else if (song.children.isNotEmpty) {
+      subtitle =
+          '${song.children.length} ${song.children.length == 1 ? 'item' : 'items'}';
+    }
+
+    // Icon tile: orange folders for expandable groups, brand colour for
+    // anything that opens the player.
+    final IconData tileIcon;
+    final Color tileColor;
+    if (isExpandable) {
+      tileIcon = expanded ? Icons.folder_open_rounded : Icons.folder_rounded;
+      tileColor = Colors.orange.shade600;
+    } else {
+      tileIcon = hasAudioChildren
+          ? Icons.headphones_rounded
+          : Icons.library_music_rounded;
+      tileColor = primary;
+    }
+
+    final tileSize = depth == 0 ? 48.0 : 40.0;
+    final radius = depth == 0 ? 22.0 : 18.0;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: indent),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () {
-                  final hasAudioChildren = song.children.any(
-                    (child) => child.isAudio,
-                  );
-                  if (song.listHere && !hasAudioChildren) {
-                    toggleExpanded(song);
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SongPlayerPage(song: song),
-                      ),
-                    );
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: expanded
-                        ? theme.primaryColor.withOpacity(0.12)
-                        : (isDarkMode
-                              ? Colors.white.withOpacity(0.05)
-                              : Colors.white),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: expanded
-                          ? theme.primaryColor.withOpacity(0.3)
-                          : Colors.transparent,
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: _PressableScale(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              if (song.listHere && !hasAudioChildren) {
+                toggleExpanded(song);
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => SongPlayerPage(song: song)),
+                );
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.all(depth == 0 ? 14 : 11),
+              decoration: BoxDecoration(
+                color: expanded
+                    ? primary.withOpacity(0.10)
+                    : (isDarkMode
+                          ? Colors.white.withOpacity(0.055)
+                          : Colors.white),
+                borderRadius: BorderRadius.circular(radius),
+                border: Border.all(
+                  color: expanded
+                      ? primary.withOpacity(0.35)
+                      : (isDarkMode
+                            ? Colors.white.withOpacity(0.07)
+                            : Colors.black.withOpacity(0.04)),
+                ),
+                boxShadow: [
+                  if (!expanded)
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDarkMode ? 0.22 : 0.06),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
                     ),
-                    boxShadow: [
-                      if (!expanded)
+                ],
+              ),
+              child: Row(
+                children: [
+                  // Gradient icon tile
+                  Container(
+                    width: tileSize,
+                    height: tileSize,
+                    decoration: BoxDecoration(
+                      gradient: _gradientFor(tileColor),
+                      borderRadius: BorderRadius.circular(depth == 0 ? 15 : 13),
+                      boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(
-                            isDarkMode ? 0.2 : 0.05,
-                          ),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
+                          color: tileColor.withOpacity(0.32),
+                          blurRadius: 12,
+                          offset: const Offset(0, 5),
                         ),
-                    ],
+                      ],
+                    ),
+                    child: Icon(
+                      tileIcon,
+                      color: Colors.white,
+                      size: depth == 0 ? 25 : 21,
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        expanded
-                            ? Icons.folder_open_rounded
-                            : Icons.folder_rounded,
-                        color: Colors.orange.shade600,
-                        size: 26,
-                      ),
-                      const SizedBox(width: 15),
-                      Expanded(
-                        child: Text(
+                  const SizedBox(width: 14),
+
+                  // Title + subtitle
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           song.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyLarge?.copyWith(
                             fontWeight: expanded
-                                ? FontWeight.bold
-                                : FontWeight.w500,
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            height: 1.25,
+                            fontSize: depth == 0 ? null : 15,
                           ),
                         ),
-                      ),
-                      if (song.listHere && !song.children.any((c) => c.isAudio))
-                        Icon(
-                          expanded
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.keyboard_arrow_right_rounded,
-                          color: theme.hintColor,
-                        ),
-                    ],
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.hintColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+
+                  // Trailing: rotating chevron for groups, play badge for audio
+                  if (isExpandable)
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: primary.withOpacity(expanded ? 0.18 : 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: AnimatedRotation(
+                        turns: expanded ? 0.25 : 0,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          color: expanded ? primary : theme.hintColor,
+                          size: 22,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.play_arrow_rounded,
+                        color: primary,
+                        size: 22,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
         ),
-        if (expanded)
-          ...song.children.map(
-            (child) =>
-                buildSongItem(child, theme, isDarkMode, indent: indent + 16),
-          ),
+
+        // Expanded children, drawn as a branch with a guide line
+        AnimatedSize(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: expanded
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 22),
+                  child: Container(
+                    padding: const EdgeInsets.only(left: 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(
+                          color: primary.withOpacity(0.25),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: song.children
+                          .map(
+                            (child) => buildSongItem(
+                              child,
+                              theme,
+                              isDarkMode,
+                              depth: depth + 1,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------
+// Press-down scale feedback for cards
+// ---------------------------------------------------------------------
+class _PressableScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _PressableScale({required this.child, required this.onTap});
+
+  @override
+  State<_PressableScale> createState() => _PressableScaleState();
+}
+
+class _PressableScaleState extends State<_PressableScale> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.975 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------
+// Fade + slide-up entrance for list items
+// ---------------------------------------------------------------------
+class _FadeSlideIn extends StatelessWidget {
+  final int index;
+  final Widget child;
+  const _FadeSlideIn({required this.index, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final step = index > 8 ? 8 : index;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 380 + step * 45),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, 16 * (1 - t)),
+          child: child,
+        ),
+      ),
+      child: child,
     );
   }
 }

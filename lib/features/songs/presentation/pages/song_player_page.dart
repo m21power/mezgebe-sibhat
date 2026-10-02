@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui'; // Required for BackdropFilter
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:just_audio/just_audio.dart';
@@ -13,16 +14,7 @@ import 'package:mezgebe_sibhat/features/songs/presentation/widgets/pick_image.da
 import '../../../Service/adService.dart';
 
 /// ---------------------------------------------------------------------
-/// FIX #3: Natural / alphanumeric sort helper.
-///
-/// Splits a name like "A.10_something" into alternating text/number
-/// chunks (["A.", "10", "_something"]) so that numeric chunks are
-/// compared as numbers instead of as strings. This makes:
-///   A.1, A.2, ..., A.10   (instead of A.1, A.10, A.2 ...)
-///   B.1, B.2, ..., B.12
-///   GMK1, GMK2, ..., GMK10
-/// sort in the order a human expects, regardless of the exact prefix
-/// pattern used (letter+number, number-only, letter.number_amharic, etc).
+/// Natural / alphanumeric sort helper.
 /// ---------------------------------------------------------------------
 int _naturalCompare(String a, String b) {
   final regExp = RegExp(r'(\d+|\D+)');
@@ -47,8 +39,6 @@ int _naturalCompare(String a, String b) {
   return aParts.length.compareTo(bParts.length);
 }
 
-/// Sorts a SongModel's children in place using the natural comparator
-/// above, and returns the same model for convenient chaining.
 SongModel _naturallySorted(SongModel model) {
   model.children.sort((a, b) => _naturalCompare(a.name, b.name));
   return model;
@@ -64,7 +54,6 @@ class SongPlayerPage extends StatefulWidget {
 
 class _SongPlayerPageState extends State<SongPlayerPage>
     with SingleTickerProviderStateMixin {
-  // Logic remains unchanged
   double progress = 0.0;
   double playbackSpeed = 1.0;
   Duration currentPosition = Duration.zero;
@@ -73,7 +62,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   int currentIndex = 0;
   double downloadProgress = 0;
   late AudioPlayer _audioPlayer;
-  late PageController _pageController; // Add this line
+  late PageController _pageController;
 
   late StreamSubscription<PlayerState> _playerStateSub;
   late StreamSubscription<Duration> _positionSub;
@@ -81,20 +70,136 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   bool isLoading = false;
   final AudioPlayer _tempPlayer = AudioPlayer();
 
-  /// FIX #1: guards against PageView.onPageChanged firing (and re-triggering
-  /// playback) for every intermediate page while we are animating the
-  /// PageController programmatically (e.g. from a list-tile tap that jumps
-  /// several songs ahead/behind). While this is true, onPageChanged should
-  /// be ignored — only a real user swipe should drive playback from there.
+  /// Guards against PageView.onPageChanged re-triggering playback for every
+  /// intermediate page while we animate the PageController programmatically.
   bool _isProgrammaticPageChange = false;
+
+  /// When true, the image area is collapsed so the song list can use the
+  /// whole screen.
+  bool _imageCollapsed = false;
+  final GlobalKey _selectedTileKey = GlobalKey();
+
+  // ---------------------------------------------------------------------
+  // Zoom / pan state
+  // ---------------------------------------------------------------------
+  static const double _maxZoom = 5.0;
+  static const double _zoomStep = 1.5;
+
+  /// One transformation controller per song image (keyed by song id).
+  final Map<String, TransformationController> _zoomControllers = {};
+
+  /// Current zoom level of the visible image. Only the zoom controls listen
+  /// to this, so zooming doesn't rebuild the whole page every frame.
+  final ValueNotifier<double> _scaleNotifier = ValueNotifier<double>(1.0);
+
+  /// True while the visible image is zoomed in. Used to lock the horizontal
+  /// swipe between songs so finger-panning works inside the image.
+  bool _isZoomed = false;
+
+  /// Size of the image viewport (needed to zoom around the centre and to
+  /// keep the image inside its bounds when using the buttons).
+  Size _viewportSize = Size.zero;
+
+  late AnimationController _zoomAnim;
+  VoidCallback? _zoomTick;
+
+  TransformationController _controllerFor(String id) {
+    return _zoomControllers.putIfAbsent(id, () {
+      final c = TransformationController();
+      c.addListener(() {
+        if (!mounted) return;
+        final isCurrent = songModel!.children[currentIndex].id == id;
+        if (!isCurrent) return;
+        final s = c.value.getMaxScaleOnAxis();
+        _scaleNotifier.value = s;
+        final zoomed = s > 1.01;
+        if (zoomed != _isZoomed) {
+          setState(() => _isZoomed = zoomed);
+        }
+      });
+      return c;
+    });
+  }
+
+  TransformationController get _currentZoomController =>
+      _controllerFor(songModel!.children[currentIndex].id);
+
+  /// Builds a matrix with the given scale/translation, clamped so the image
+  /// can never be dragged outside its frame.
+  Matrix4 _buildMatrix(double scale, double tx, double ty) {
+    final w = _viewportSize.width;
+    final h = _viewportSize.height;
+    final cx = tx.clamp(w * (1 - scale), 0.0).toDouble();
+    final cy = ty.clamp(h * (1 - scale), 0.0).toDouble();
+    return Matrix4.translationValues(cx, cy, 0)
+      ..multiply(Matrix4.diagonal3Values(scale, scale, 1));
+  }
+
+  void _animateTo(TransformationController c, Matrix4 end) {
+    if (_zoomTick != null) _zoomAnim.removeListener(_zoomTick!);
+    _zoomAnim.stop();
+    final tween = Matrix4Tween(begin: c.value, end: end);
+    final curved = CurvedAnimation(parent: _zoomAnim, curve: Curves.easeOut);
+    _zoomTick = () => c.value = tween.evaluate(curved);
+    _zoomAnim.addListener(_zoomTick!);
+    _zoomAnim.forward(from: 0);
+  }
+
+  void _zoomBy(double factor) {
+    if (_viewportSize == Size.zero) return;
+    final c = _currentZoomController;
+    final s = c.value.getMaxScaleOnAxis();
+    final ns = (s * factor).clamp(1.0, _maxZoom).toDouble();
+    if ((ns - s).abs() < 0.001) return;
+
+    // Zoom around the centre of the image frame.
+    final t = c.value.getTranslation();
+    final cx = _viewportSize.width / 2;
+    final cy = _viewportSize.height / 2;
+    final k = ns / s;
+    _animateTo(c, _buildMatrix(ns, cx - (cx - t.x) * k, cy - (cy - t.y) * k));
+  }
+
+  /// dirX / dirY: -1, 0 or 1. Moves the *view* in that direction.
+  void _pan(double dirX, double dirY) {
+    if (_viewportSize == Size.zero) return;
+    final c = _currentZoomController;
+    final s = c.value.getMaxScaleOnAxis();
+    if (s <= 1.01) return;
+    final t = c.value.getTranslation();
+    _animateTo(
+      c,
+      _buildMatrix(
+        s,
+        t.x - dirX * _viewportSize.width * 0.4,
+        t.y - dirY * _viewportSize.height * 0.4,
+      ),
+    );
+  }
+
+  void _resetZoom() {
+    _animateTo(_currentZoomController, Matrix4.identity());
+  }
+
+  void _toggleDoubleTapZoom() {
+    final s = _currentZoomController.value.getMaxScaleOnAxis();
+    if (s > 1.01) {
+      _resetZoom();
+    } else {
+      _zoomBy(2.5);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    // FIX #3: sort children naturally as soon as we receive the model.
     songModel = _naturallySorted(widget.song);
     _audioPlayer = AudioPlayer();
     _pageController = PageController(initialPage: currentIndex);
+    _zoomAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
     _audioPlayer.durationStream.listen((d) {
       if (d != null) setState(() => totalDuration = d);
     });
@@ -121,13 +226,13 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     });
     _bannerAd = AdService().createBanner((ad) {
       setState(() {
-        _isAdLoaded = true; // Set flag to true only when loaded
+        _isAdLoaded = true;
       });
     });
     AdService().loadInterstitial();
   }
 
-  // --- Native ad insertion helpers (1 ad every 9 songs) ---
+  // --- Native ad insertion helpers ---
   static const int _adInterval = 15;
 
   bool _isAdSlot(int listIndex) =>
@@ -149,7 +254,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
   Widget _buildNativeAdTile(int listIndex) {
     if (_failedAdSlots.contains(listIndex)) {
-      return const SizedBox.shrink(); // failed — collapse the slot, no gap
+      return const SizedBox.shrink();
     }
 
     if (!_nativeAds.containsKey(listIndex)) {
@@ -165,7 +270,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           if (mounted) setState(() => _failedAdSlots.add(listIndex));
         },
       );
-      return const SizedBox.shrink(); // nothing to show until it loads
+      return const SizedBox.shrink();
     }
 
     return Container(
@@ -182,8 +287,13 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     _positionSub.cancel();
     _audioPlayer.dispose();
     _tempPlayer.dispose();
+    _zoomAnim.dispose();
+    _scaleNotifier.dispose();
+    for (final c in _zoomControllers.values) {
+      c.dispose();
+    }
     for (final ad in _nativeAds.values) {
-      ad.dispose(); // NEW
+      ad.dispose();
     }
     super.dispose();
   }
@@ -205,17 +315,14 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     isPlaying ? await _audioPlayer.pause() : await _audioPlayer.play();
   }
 
-  /// FIX #1: added an [animatePage] flag.
-  /// - When called from a tap (list tile / next / prev), we DO want to move
-  ///   the PageView, so animatePage stays true (default).
-  /// - When called *from* onPageChanged (the user swiped and already moved
-  ///   the page themselves), we pass animatePage: false so we don't try to
-  ///   re-animate a page we're already on.
-  /// While the programmatic animation runs, _isProgrammaticPageChange is
-  /// set so intermediate onPageChanged callbacks are ignored — this is
-  /// what stops the "plays every song in between" behavior.
   Future<void> playSongAtIndex(int index, {bool animatePage = true}) async {
     if (index < 0 || index >= songModel!.children.length) return;
+
+    // Every song remembers its own zoom/pan. Look up the target song's
+    // saved zoom so the controls and swipe-lock match it.
+    final targetScale = _controllerFor(
+      songModel!.children[index].id,
+    ).value.getMaxScaleOnAxis();
 
     setState(() {
       currentIndex = index;
@@ -223,9 +330,25 @@ class _SongPlayerPageState extends State<SongPlayerPage>
       progress = 0.0;
       currentPosition = Duration.zero;
       totalDuration = Duration.zero;
+      _imageCollapsed = false; // expand the image whenever a song is picked
+      _isZoomed = targetScale > 1.01;
+    });
+    _scaleNotifier.value = targetScale;
+
+    // Keep the selected tile in view once the image has expanded
+    Future.delayed(const Duration(milliseconds: 300), () {
+      final ctx = _selectedTileKey.currentContext;
+      if (mounted && ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
     });
 
-    // CRITICAL: Tell the PageView to move to the new image
+    // Move the image PageView to the selected song's image
     if (animatePage && _pageController.hasClients) {
       _isProgrammaticPageChange = true;
       await _pageController.animateToPage(
@@ -269,17 +392,21 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    // Full (expanded) height of the image area.
+    final screenH = MediaQuery.of(context).size.height;
+    final imageH = screenH < 700
+        ? (screenH * 0.30).clamp(170.0, 220.0)
+        : (screenH * 0.36).clamp(200.0, 320.0);
+
     return SafeArea(
       child: Scaffold(
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          toolbarHeight:
-              68, // slightly taller to fit two lines — costs nothing, it floats over the body
+          toolbarHeight: 68,
           titleSpacing: 0,
           centerTitle: true,
-          // Scrim so the title stays legible over any artwork color
           flexibleSpace: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -315,7 +442,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                 ),
               ),
               const SizedBox(height: 3),
-              // Animated so the title glides/fades in every time the track changes
               ClipRect(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 350),
@@ -431,21 +557,32 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                 children: [
                   SizedBox(height: MediaQuery.of(context).padding.top),
 
-                  // 1. Image Viewer
-                  AspectRatio(
-                    aspectRatio: 1.1,
-                    child: imageWidget(
-                      theme,
-                      songModel!.name,
-                      songState,
-                      context,
+                  // 1. Image Viewer — collapses to 0 while browsing the list.
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOut,
+                    height: _imageCollapsed ? 0 : imageH,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        alignment: Alignment.topCenter,
+                        minHeight: imageH,
+                        maxHeight: imageH,
+                        child: SizedBox(
+                          height: imageH,
+                          child: imageWidget(
+                            theme,
+                            songModel!.name,
+                            songState,
+                            context,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
 
-                  // 2. Slider — song name now lives in the AppBar, so this
-                  // block is just the scrubber, tight and compact
+                  // 2. Slider
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                     child: SliderTheme(
                       data: SliderTheme.of(context).copyWith(
                         trackHeight: 3,
@@ -492,7 +629,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
                   // 3. Main Controls Row
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    padding: EdgeInsets.zero,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -521,7 +658,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                   // 4. Glassmorphic Bottom List
                   Expanded(
                     child: Container(
-                      margin: const EdgeInsets.only(top: 20),
+                      margin: const EdgeInsets.only(top: 8),
                       decoration: BoxDecoration(
                         color: isDark
                             ? Colors.white.withOpacity(0.05)
@@ -539,20 +676,47 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                         ),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: ListView.builder(
-                            padding: const EdgeInsets.only(top: 20, bottom: 20),
-                            itemCount: _itemCountWithAds(
-                              songModel!.children.length,
-                            ),
-                            itemBuilder: (context, index) {
-                              if (_isAdSlot(index)) {
-                                return _buildNativeAdTile(index);
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: (n) {
+                              if (n.depth != 0) return false;
+
+                              // Scrolling down the list -> collapse the image
+                              if (n is UserScrollNotification &&
+                                  n.direction == ScrollDirection.reverse &&
+                                  !_imageCollapsed) {
+                                setState(() => _imageCollapsed = true);
                               }
-                              final songIndex = _songIndexForListIndex(index);
-                              final song = songModel!.children[songIndex];
-                              final isSelected = songIndex == currentIndex;
-                              return _buildListTile(song, isSelected, theme);
+
+                              // Pulling down at the very top -> bring it back
+                              final atTopPullingDown =
+                                  (n is OverscrollNotification &&
+                                      n.overscroll < 0) ||
+                                  (n is ScrollUpdateNotification &&
+                                      n.metrics.pixels <= 0 &&
+                                      (n.scrollDelta ?? 0) < 0);
+                              if (atTopPullingDown && _imageCollapsed) {
+                                setState(() => _imageCollapsed = false);
+                              }
+                              return false;
                             },
+                            child: ListView.builder(
+                              padding: const EdgeInsets.only(
+                                top: 12,
+                                bottom: 12,
+                              ),
+                              itemCount: _itemCountWithAds(
+                                songModel!.children.length,
+                              ),
+                              itemBuilder: (context, index) {
+                                if (_isAdSlot(index)) {
+                                  return _buildNativeAdTile(index);
+                                }
+                                final songIndex = _songIndexForListIndex(index);
+                                final song = songModel!.children[songIndex];
+                                final isSelected = songIndex == currentIndex;
+                                return _buildListTile(song, isSelected, theme);
+                              },
+                            ),
                           ),
                         ),
                       ),
@@ -601,8 +765,8 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
         if (songState is AudioDownloadingFetchingState) {
           return SizedBox(
-            height: 64,
-            width: 64,
+            height: 56,
+            width: 56,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -627,10 +791,8 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           onTap: () async {
             if (songState is AudioDownloadRequestedState ||
                 songState is AudioDownloadingFetchingState) {
-              // Prevent multiple download attempts
               return;
             }
-            // Your existing complex logic for Play/Pause/Download
             if (currentChild.isDownloaded && exists) {
               togglePlayPause();
             } else {
@@ -645,8 +807,8 @@ class _SongPlayerPageState extends State<SongPlayerPage>
             }
           },
           child: Container(
-            height: 64,
-            width: 64,
+            height: 56,
+            width: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: theme.primaryColor,
@@ -669,7 +831,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded)
                         : Icons.download_rounded,
-                    size: 38,
+                    size: 34,
                     color: Colors.white,
                   ),
           ),
@@ -680,8 +842,9 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
   Widget _buildListTile(SongModel song, bool isSelected, ThemeData theme) {
     return AnimatedContainer(
+      key: isSelected ? _selectedTileKey : null,
       duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       decoration: BoxDecoration(
         color: isSelected
             ? theme.primaryColor.withOpacity(0.15)
@@ -689,8 +852,9 @@ class _SongPlayerPageState extends State<SongPlayerPage>
         borderRadius: BorderRadius.circular(20),
       ),
       child: ListTile(
-        // FIX #1: this already jumped directly by index — the bug was
-        // downstream in playSongAtIndex/onPageChanged, now fixed above.
+        dense: true,
+        visualDensity: const VisualDensity(vertical: -2),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         onTap: () => playSongAtIndex(songModel!.children.indexOf(song)),
         leading: Icon(
           isSelected ? Icons.equalizer_rounded : Icons.music_note_rounded,
@@ -727,7 +891,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     );
   }
 
-  // --- Optimized imageWidget with smooth shadows ---
+  // --- imageWidget ---
   Widget imageWidget(
     ThemeData theme,
     String title,
@@ -736,13 +900,12 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   ) {
     return PageView.builder(
       controller: _pageController,
-      physics: const BouncingScrollPhysics(),
+      // Lock swiping between songs while zoomed in, so dragging the image
+      // pans it instead. Zoom out (or tap reset) to swipe again.
+      physics: _isZoomed
+          ? const NeverScrollableScrollPhysics()
+          : const BouncingScrollPhysics(),
       itemCount: songModel!.children.length,
-      // FIX #1: ignore page-change events that were caused by our own
-      // programmatic animateToPage() call (e.g. from tapping a list item
-      // several songs away). Only a genuine user swipe should call
-      // playSongAtIndex from here, and it does so without re-animating
-      // the page (it's already there).
       onPageChanged: (index) {
         if (_isProgrammaticPageChange) return;
         playSongAtIndex(index, animatePage: false);
@@ -755,7 +918,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           scale: isActive ? 1.0 : 0.8,
           duration: const Duration(milliseconds: 300),
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
               boxShadow: [
@@ -777,35 +940,60 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                       (localPath != null && exists) ||
                       selectedImage[currentChild.id] != null;
 
-                  return Stack(
-                    children: [
-                      // The Image Layer with Zoom
-                      Positioned.fill(
-                        child: hasUploaded
-                            ? InteractiveViewer(
-                                clipBehavior: Clip.none,
-                                minScale: 1.0,
-                                maxScale: 4.0,
-                                child: Image.file(
-                                  File(
-                                    localPath ?? selectedImage[currentChild.id],
-                                  ),
-                                  fit: BoxFit.contain,
-                                ),
-                              )
-                            : _buildAnimatedPlaceholder(
-                                theme,
-                                currentChild.id,
-                              ), // Cool placeholder
-                      ),
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (isActive) _viewportSize = constraints.biggest;
 
-                      // Upload Button Overlay
-                      Positioned(
-                        bottom: 15,
-                        right: 15,
-                        child: _buildUploadButton(theme, currentChild.id),
-                      ),
-                    ],
+                      return Stack(
+                        children: [
+                          Positioned.fill(
+                            child: hasUploaded
+                                ? GestureDetector(
+                                    onDoubleTap: isActive
+                                        ? _toggleDoubleTapZoom
+                                        : null,
+                                    child: InteractiveViewer(
+                                      transformationController: _controllerFor(
+                                        currentChild.id,
+                                      ),
+                                      clipBehavior: Clip.none,
+                                      minScale: 1.0,
+                                      maxScale: _maxZoom,
+                                      child: Image.file(
+                                        File(
+                                          localPath ??
+                                              selectedImage[currentChild.id],
+                                        ),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  )
+                                : _buildAnimatedPlaceholder(
+                                    theme,
+                                    currentChild.id,
+                                  ),
+                          ),
+
+                          // Pan arrows (only visible while zoomed in)
+                          if (hasUploaded && isActive) _buildPanArrows(),
+
+                          // Zoom controls (bottom-left)
+                          if (hasUploaded && isActive)
+                            Positioned(
+                              bottom: 12,
+                              left: 12,
+                              child: _buildZoomControls(),
+                            ),
+
+                          // Upload Button Overlay
+                          Positioned(
+                            bottom: 15,
+                            right: 15,
+                            child: _buildUploadButton(theme, currentChild.id),
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -813,6 +1001,160 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           ),
         );
       },
+    );
+  }
+
+  // --- Zoom UI ---
+
+  /// Small glass pill:  [ − ]  1.5×  [ + ]
+  /// Tapping the "1.5×" label resets the zoom back to 1.0×.
+  Widget _buildZoomControls() {
+    return ValueListenableBuilder<double>(
+      valueListenable: _scaleNotifier,
+      builder: (context, scale, _) {
+        final canZoomOut = scale > 1.01;
+        final canZoomIn = scale < _maxZoom - 0.01;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.55),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withOpacity(0.15)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _zoomButton(
+                Icons.remove_rounded,
+                canZoomOut ? () => _zoomBy(1 / _zoomStep) : null,
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: canZoomOut ? _resetZoom : null,
+                child: SizedBox(
+                  width: 40,
+                  child: Text(
+                    "${scale.toStringAsFixed(1)}×",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(canZoomOut ? 1 : 0.7),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              _zoomButton(
+                Icons.add_rounded,
+                canZoomIn ? () => _zoomBy(_zoomStep) : null,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _zoomButton(IconData icon, VoidCallback? onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Icon(
+          icon,
+          size: 20,
+          color: onTap == null ? Colors.white30 : Colors.white,
+        ),
+      ),
+    );
+  }
+
+  /// Four small arrows on the edges of the image. They fade in only when the
+  /// image is zoomed, and move the view left / right / up / down.
+  Widget _buildPanArrows() {
+    return Positioned.fill(
+      child: ValueListenableBuilder<double>(
+        valueListenable: _scaleNotifier,
+        builder: (context, scale, _) {
+          final zoomed = scale > 1.01;
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: !zoomed
+                ? const SizedBox.shrink(key: ValueKey('no-arrows'))
+                : Stack(
+                    key: const ValueKey('arrows'),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: _panButton(
+                            Icons.chevron_left_rounded,
+                            () => _pan(-1, 0),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: _panButton(
+                            Icons.chevron_right_rounded,
+                            () => _pan(1, 0),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _panButton(
+                            Icons.keyboard_arrow_up_rounded,
+                            () => _pan(0, -1),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: _panButton(
+                            Icons.keyboard_arrow_down_rounded,
+                            () => _pan(0, 1),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _panButton(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.45),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.15)),
+        ),
+        child: Icon(icon, size: 22, color: Colors.white),
+      ),
     );
   }
 
@@ -824,7 +1166,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           final confirm = await showConfirmImageDialog(context, imagePath);
           if (confirm == true) {
             setState(() {
-              // CRITICAL: Bind image to specific ID
               selectedImage[songId] = imagePath;
             });
             context.read<SongBloc>().add(
@@ -844,7 +1185,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           curve: Curves.easeInOutSine,
           builder: (context, value, child) {
             return Opacity(
-              opacity: 0.6 + (value * 0.4), // Gentle pulse
+              opacity: 0.6 + (value * 0.4),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -871,8 +1212,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
               ),
             );
           },
-          onEnd:
-              () {}, // Restart loop via state if needed, but Tween handles pulse well
+          onEnd: () {},
         ),
       ),
     );
@@ -886,7 +1226,6 @@ class _SongPlayerPageState extends State<SongPlayerPage>
           final confirm = await showConfirmImageDialog(context, imagePath);
           if (confirm == true) {
             setState(() {
-              // CRITICAL: Bind image to specific ID
               selectedImage[songId] = imagePath;
             });
             context.read<SongBloc>().add(
