@@ -224,12 +224,21 @@ class _SongPlayerPageState extends State<SongPlayerPage>
         }
       });
     });
-    _bannerAd = AdService().createBanner((ad) {
-      setState(() {
-        _isAdLoaded = true;
-      });
-    });
+    AdService().adsReady.addListener(_onAdsReady);
+    _loadBanner();
     AdService().loadInterstitial();
+  }
+
+  void _loadBanner() {
+    if (_bannerAd != null || !AdService().adsReady.value) return;
+    _bannerAd = AdService().createBanner((ad) {
+      if (mounted) setState(() => _isAdLoaded = true);
+    });
+  }
+
+  void _onAdsReady() {
+    _loadBanner();
+    if (mounted) setState(() {}); // lets native ad slots request their ads
   }
 
   // --- Native ad insertion helpers ---
@@ -251,6 +260,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
   final Map<int, NativeAd> _nativeAds = {};
   final Set<int> _failedAdSlots = {};
+  final Set<int> _requestedAdSlots = {};
 
   Widget _buildNativeAdTile(int listIndex) {
     if (_failedAdSlots.contains(listIndex)) {
@@ -258,6 +268,13 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     }
 
     if (!_nativeAds.containsKey(listIndex)) {
+      // Wait for consent, and never request the same slot twice.
+      if (!AdService().adsReady.value ||
+          _requestedAdSlots.contains(listIndex)) {
+        return const SizedBox.shrink();
+      }
+      _requestedAdSlots.add(listIndex);
+
       AdService().createNativeAd(
         onLoaded: (nativeAd) {
           if (!mounted) {
@@ -282,6 +299,8 @@ class _SongPlayerPageState extends State<SongPlayerPage>
 
   @override
   void dispose() {
+    AdService().adsReady.removeListener(_onAdsReady);
+    _bannerAd?.dispose();
     _pageController.dispose();
     _playerStateSub.cancel();
     _positionSub.cancel();

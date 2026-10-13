@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mezgebe_sibhat/features/Service/privacy_setting_tile.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/donation_card.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -30,11 +31,8 @@ class _AboutPageState extends State<AboutPage> {
   void initState() {
     super.initState();
     _initPackageInfo();
-    _bannerAd = AdService().createBanner((ad) {
-      setState(() {
-        _isAdLoaded = true; // Set flag to true only when loaded
-      });
-    });
+    AdService().adsReady.addListener(_loadBanner);
+    _loadBanner();
     // Rebuild UI as the user types
     _feedbackController.addListener(() {
       if (mounted) setState(() {});
@@ -46,8 +44,16 @@ class _AboutPageState extends State<AboutPage> {
     setState(() => appVersion = info.version);
   }
 
+  void _loadBanner() {
+    if (_bannerAd != null || !AdService().adsReady.value) return;
+    _bannerAd = AdService().createBanner((ad) {
+      if (mounted) setState(() => _isAdLoaded = true);
+    });
+  }
+
   @override
   void dispose() {
+    AdService().adsReady.removeListener(_loadBanner);
     _feedbackController.dispose();
     _bannerAd?.dispose();
     super.dispose();
@@ -114,7 +120,12 @@ class _AboutPageState extends State<AboutPage> {
                     // --- DEDICATION ---
                     _buildDedicationCard(isDark),
 
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 12),
+
+                    // Only visible to EEA/UK users (required by Google)
+                    const PrivacySettingsTile(),
+
+                    const SizedBox(height: 18),
 
                     // --- FEEDBACK FORM ---
                     Align(
@@ -234,7 +245,7 @@ class _AboutPageState extends State<AboutPage> {
       ),
       child: Column(
         children: [
-          Image.asset('assets/icon2.png', height: 80),
+          Image.asset('assets/mezgebe_sibhat.png', height: 80),
           const SizedBox(height: 16),
           Text(
             'መዝገበ ስብሐት',

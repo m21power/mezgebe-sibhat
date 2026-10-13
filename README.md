@@ -66,8 +66,8 @@ Prerequisites: Flutter SDK (see https://flutter.dev).
 Clone the repository and fetch dependencies:
 
 ```bash
-git clone https://github.com/m21power/mezgebe-sibhat.git
-cd mezgebe-sibhat
+git clone https://github.com/m21power/mezgebe_sibhat.git
+cd mezgebe_sibhat
 flutter pub get
 ```
 

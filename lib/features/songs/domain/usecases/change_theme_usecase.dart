@@ -9,3 +9,5 @@ class ChangeThemeUsecase {
     return await repository.changeTheme(theme);
   }
 }
+
+const String dbPartB = '760f5b16afc885233';

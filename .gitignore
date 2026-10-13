@@ -47,3 +47,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+json_to_sqlite.py
+build_encrypted_db.py
+
+merged_songs.json

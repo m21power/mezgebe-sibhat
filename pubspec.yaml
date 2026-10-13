@@ -3,7 +3,7 @@ description: "Mezgebe Sibhat is a mobile application built using Flutter. It ser
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 1.1.0+22
+version: 1.1.0+25
 
 environment:
   sdk: ^3.9.2
@@ -29,6 +29,8 @@ dependencies:
   google_mobile_ads: ^7.0.0
   url_launcher: ^6.3.2
   in_app_update: ^4.2.5
+  sqflite_sqlcipher: ^3.4.1
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:
@@ -41,8 +43,15 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  # adaptive_icon_background: "#FFFFFF"
-  image_path: "assets/icon2.png"
+
+  # Normal/legacy icon
+  image_path: "assets/mezgebe_sibhat.png"
+
+  # Android adaptive icon
+  adaptive_icon_background: "assets/launcher_background.png"
+  adaptive_icon_foreground: "assets/mezgebe_sibhat.png"
+  adaptive_icon_foreground_inset: 18
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
@@ -50,6 +59,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/
+    - assets/mezmure.db.enc
     - .env
   # fonts:
   #   - family: Schyler

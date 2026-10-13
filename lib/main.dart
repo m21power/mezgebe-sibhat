@@ -12,16 +12,14 @@ import 'package:mezgebe_sibhat/theme/theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Only do things here that are required before the UI can start.
   await init();
   await dotenv.load(fileName: ".env");
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  // Start the UI immediately.
   runApp(const MyApp());
 
-  // Initialize ads AFTER the first UI frame.
+  // Consent form + AdMob init after the first UI frame.
   WidgetsBinding.instance.addPostFrameCallback((_) {
     AdService().init();
   });
@@ -40,7 +38,6 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-
     _appLifecycleReactor = AppLifecycleReactor();
     _appLifecycleReactor.start();
   }
