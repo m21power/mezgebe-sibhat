@@ -12,6 +12,8 @@ import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/widgets/pick_image.dart';
 
 import '../../../Service/adService.dart';
+import 'package:mezgebe_sibhat/core/display_name.dart';
+import 'package:mezgebe_sibhat/l10n/app_localizations.dart';
 
 /// ---------------------------------------------------------------------
 /// Natural / alphanumeric sort helper.
@@ -321,7 +323,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
     final currentChild = songModel!.children[currentIndex];
     if (!currentChild.isDownloaded) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("This song isn’t downloaded yet")),
+        SnackBar(content: Text(AppLocalizations.of(context)!.notDownloadedYet)),
       );
       return;
     }
@@ -410,7 +412,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
+    final lang = Localizations.localeOf(context).languageCode;
     // Full (expanded) height of the image area.
     final screenH = MediaQuery.of(context).size.height;
     final imageH = screenH < 700
@@ -450,7 +452,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                widget.song.name,
+                displayName(widget.song.name, lang),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -475,7 +477,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                     ),
                   ),
                   child: Text(
-                    songModel!.children[currentIndex].name,
+                    displayName(songModel!.children[currentIndex].name, lang),
                     key: ValueKey(currentIndex),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -860,6 +862,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   }
 
   Widget _buildListTile(SongModel song, bool isSelected, ThemeData theme) {
+    final lang = Localizations.localeOf(context).languageCode;
     return AnimatedContainer(
       key: isSelected ? _selectedTileKey : null,
       duration: const Duration(milliseconds: 300),
@@ -882,7 +885,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
               : theme.iconTheme.color?.withOpacity(0.5),
         ),
         title: Text(
-          song.name,
+          displayName(song.name, lang),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -902,7 +905,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
   void _showNoInternetSnackBar(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text("Please enable internet connection"),
+        content: Text(AppLocalizations.of(context)!.enableInternet),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1217,7 +1220,7 @@ class _SongPlayerPageState extends State<SongPlayerPage>
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     child: Text(
-                      "For a better experience, upload a photo of the book page you are listening to.",
+                      AppLocalizations.of(context)!.uploadHint,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,

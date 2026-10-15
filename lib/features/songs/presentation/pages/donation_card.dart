@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mezgebe_sibhat/l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DonationSheet extends StatelessWidget {
@@ -67,18 +68,19 @@ class DonationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context)!;
 
     return Column(
       children: [
         const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 48),
         const SizedBox(height: 16),
-        const Text(
-          "Support the Mission",
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+        Text(
+          l10n.supportMission,
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 12),
         Text(
-          "Ads help us cover the essential server costs required to keep this app running, but your personal support is deeply appreciated. Together, we keep these teachings easily accessible for all. 🙏",
+          l10n.donationBody,
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             height: 1.5,
@@ -111,22 +113,27 @@ class DonationCard extends StatelessWidget {
               children: [
                 const Icon(Icons.public_rounded, color: Colors.white, size: 28),
                 const SizedBox(width: 15),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      "Global Support 🌍",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 17,
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.globalSupport,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                        ),
                       ),
-                    ),
-                    Text(
-                      "USD / EUR / International",
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
+                      Text(
+                        l10n.globalSupportSub,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -135,7 +142,7 @@ class DonationCard extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        // Local Support - Glass/Outline style
+        // Local Support - Outline style
         OutlinedButton(
           onPressed: onLocalTap,
           style: OutlinedButton.styleFrom(
@@ -153,26 +160,31 @@ class DonationCard extends StatelessWidget {
             children: [
               const Icon(Icons.account_balance_rounded, size: 24),
               const SizedBox(width: 15),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    "Ethiopia 🇪🇹",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                  Text(
-                    "Telebirr / Local Banking",
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.ethiopia,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 17,
+                      ),
+                    ),
+                    Text(
+                      l10n.ethiopiaSub,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 24),
-        const Text(
-          "Every contribution matters ❤️",
-          style: TextStyle(color: Colors.grey, fontSize: 12),
+        Text(
+          l10n.everyContribution,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
       ],
     );

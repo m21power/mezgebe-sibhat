@@ -10,6 +10,9 @@ import 'package:mezgebe_sibhat/features/songs/presentation/pages/about_page.dart
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/donation_card.dart';
 import 'package:mezgebe_sibhat/theme/theme.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/song_player_page.dart';
+import 'package:mezgebe_sibhat/core/display_name.dart';
+import 'package:mezgebe_sibhat/core/locale_controller.dart';
+import 'package:mezgebe_sibhat/l10n/app_localizations.dart';
 
 // ---------------------------------------------------------------------
 // Small design helpers
@@ -57,11 +60,12 @@ class _HomePageState extends State<HomePage> {
           updateInfo.flexibleUpdateAllowed) {
         await InAppUpdate.startFlexibleUpdate();
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('🎉 Update downloaded!'),
+              content: Text(l10n.updateDownloaded),
               action: SnackBarAction(
-                label: 'Restart',
+                label: l10n.restart,
                 onPressed: () => InAppUpdate.completeFlexibleUpdate(),
               ),
               behavior: SnackBarBehavior.floating,
@@ -102,6 +106,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final songState = context.watch<SongBloc>().state;
     final theme = Theme.of(context);
     final isDarkMode = !songState.isLightTheme;
@@ -161,7 +166,7 @@ class _HomePageState extends State<HomePage> {
                       child: Row(
                         children: [
                           Text(
-                            'Collections',
+                            l10n.collections,
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.3,
@@ -237,6 +242,7 @@ class _HomePageState extends State<HomePage> {
   // Header: big title that collapses into a compact bar
   // ---------------------------------------------------------------------
   Widget _buildHeader(ThemeData theme, bool isDarkMode, int count) {
+    final l10n = AppLocalizations.of(context)!;
     final primary = theme.primaryColor;
     final barColor = isDarkMode ? const Color(0xFF0F1226) : Colors.white;
 
@@ -279,7 +285,7 @@ class _HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'AUDIO LIBRARY',
+                        l10n.audioLibrary,
                         style: TextStyle(
                           color: primary,
                           fontSize: 11,
@@ -293,7 +299,7 @@ class _HomePageState extends State<HomePage> {
                           Rect.fromLTWH(0, 0, rect.width, rect.height),
                         ),
                         child: Text(
-                          'መዝገበ ስብሐት',
+                          l10n.appTitle,
                           style: theme.textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.6,
@@ -316,7 +322,7 @@ class _HomePageState extends State<HomePage> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'መዝገበ ስብሐት',
+                      l10n.appTitle,
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.8,
@@ -366,7 +372,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildMenu(bool isDarkMode) {
     final theme = Theme.of(context);
     final iconColor = isDarkMode ? Colors.white70 : Colors.black87;
-
+    final l10n = AppLocalizations.of(context)!;
     Widget menuIcon(IconData icon, Color color) => Container(
       width: 34,
       height: 34,
@@ -414,6 +420,31 @@ class _HomePageState extends State<HomePage> {
           context.read<SongBloc>().add(
             ChangeThemeEvent(isDarkMode ? 'light' : 'dark'),
           );
+        } else if (value == 'lang') {
+          showModalBottomSheet(
+            context: context,
+            builder: (sheetCtx) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: Text(l10n.english),
+                    onTap: () {
+                      LocaleController.instance.set('en');
+                      Navigator.pop(sheetCtx);
+                    },
+                  ),
+                  ListTile(
+                    title: Text(l10n.amharic),
+                    onTap: () {
+                      LocaleController.instance.set('am');
+                      Navigator.pop(sheetCtx);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
         }
       },
       itemBuilder: (context) => [
@@ -429,7 +460,23 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(width: 12),
               Text(
-                isDarkMode ? 'Light Mode' : 'Dark Mode',
+                isDarkMode ? l10n.lightMode : l10n.darkMode,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem(
+          value: 'lang',
+          child: Row(
+            children: [
+              menuIcon(Icons.language_rounded, Colors.teal),
+              const SizedBox(width: 12),
+              Text(
+                l10n.language,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -445,7 +492,7 @@ class _HomePageState extends State<HomePage> {
               menuIcon(Icons.info_rounded, Colors.blueAccent),
               const SizedBox(width: 12),
               Text(
-                'About App',
+                l10n.aboutApp,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -466,6 +513,8 @@ class _HomePageState extends State<HomePage> {
     bool isDarkMode, {
     int depth = 0,
   }) {
+    final l10n = AppLocalizations.of(context)!;
+    final lang = Localizations.localeOf(context).languageCode;
     final expanded = isExpanded(song);
     final primary = theme.primaryColor;
 
@@ -475,10 +524,9 @@ class _HomePageState extends State<HomePage> {
 
     String? subtitle;
     if (hasAudioChildren) {
-      subtitle = '$audioCount ${audioCount == 1 ? 'track' : 'tracks'}';
+      subtitle = l10n.tracks(audioCount);
     } else if (song.children.isNotEmpty) {
-      subtitle =
-          '${song.children.length} ${song.children.length == 1 ? 'item' : 'items'}';
+      subtitle = l10n.items(song.children.length);
     }
 
     // Icon tile: orange folders for expandable groups, brand colour for
@@ -573,7 +621,7 @@ class _HomePageState extends State<HomePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          song.name,
+                          displayName(song.name, lang),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyLarge?.copyWith(

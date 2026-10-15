@@ -1,15 +1,19 @@
 name: mezgebe_sibhat
-description: "Mezgebe Sibhat is a mobile application built using Flutter. It serves as a platform for users to access and engage with content related to Mezgebe Sibhat, providing features such as audio playback, offline access, and user-friendly navigation. The app aims to enhance the user experience by offering a seamless interface and a rich collection of content for users to explore."
+description: "Mezgebe Sibhat is a mobile application built using Flutter. It serves as a platform for users to access and engage with content related to Mezgebe Sibhat, providing features such as audio playback, offline access, and user-friendly navigation."
 
-publish_to: "none" # Remove this line if you wish to publish to pub.dev
+publish_to: "none"
 
-version: 1.1.0+25
+version: 1.1.0+27
 
 environment:
   sdk: ^3.9.2
+
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
   flutter_bloc: ^9.1.1
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -35,7 +39,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^5.0.0
   hive_generator: ^2.0.1
   build_runner: ^2.4.13
@@ -43,35 +46,16 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-
-  # Normal/legacy icon
   image_path: "assets/mezgebe_sibhat.png"
-
-  # Android adaptive icon
   adaptive_icon_background: "assets/launcher_background.png"
   adaptive_icon_foreground: "assets/mezgebe_sibhat.png"
   adaptive_icon_foreground_inset: 18
   remove_alpha_ios: true
 
 flutter:
+  generate: true
   uses-material-design: true
-
-  # To add assets to your application, add an assets section, like this:
   assets:
     - assets/
     - assets/mezmure.db.enc
     - .env
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package

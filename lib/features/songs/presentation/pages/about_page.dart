@@ -7,7 +7,7 @@ import 'package:mezgebe_sibhat/features/Service/privacy_setting_tile.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/bloc/song_bloc.dart';
 import 'package:mezgebe_sibhat/features/songs/presentation/pages/donation_card.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-
+import 'package:mezgebe_sibhat/l10n/app_localizations.dart';
 import '../../../Service/adService.dart';
 
 class AboutPage extends StatefulWidget {
@@ -63,14 +63,14 @@ class _AboutPageState extends State<AboutPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
+    final l10n = AppLocalizations.of(context)!;
     return SafeArea(
       child: Scaffold(
         backgroundColor: isDark
             ? const Color(0xFF0F1226)
             : const Color(0xFFF8F9FE),
         appBar: AppBar(
-          title: const Text('About'),
+          title: Text(l10n.aboutApp),
           backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: true,
@@ -131,7 +131,7 @@ class _AboutPageState extends State<AboutPage> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        "  Report a Bug",
+                        "  ${l10n.reportBug}",
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -152,8 +152,7 @@ class _AboutPageState extends State<AboutPage> {
                           children: [
                             _buildTextField(
                               controller: _feedbackController,
-                              hint:
-                                  "Describe the issue (Optional if image attached)...",
+                              hint: l10n.describeIssue,
                               isDark: isDark,
                             ),
                             const SizedBox(height: 20),
@@ -183,8 +182,8 @@ class _AboutPageState extends State<AboutPage> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Text(
-                                        "Send Report 🚀",
+                                    : Text(
+                                        l10n.sendReport,
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -232,6 +231,7 @@ class _AboutPageState extends State<AboutPage> {
   }
 
   Widget _buildHeader(bool isDark, ThemeData theme) {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(28),
@@ -248,16 +248,16 @@ class _AboutPageState extends State<AboutPage> {
           Image.asset('assets/mezgebe_sibhat.png', height: 80),
           const SizedBox(height: 16),
           Text(
-            'መዝገበ ስብሐት',
+            l10n.appTitle,
             style: theme.textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            "Ads help us cover the essential server costs required to keep this app running, but your personal support is deeply appreciated. Together, we keep these teachings easily accessible for all. 🙏",
+          Text(
+            l10n.donationBody,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, height: 1.5),
+            style: const TextStyle(fontSize: 14, height: 1.5),
           ),
         ],
       ),
@@ -265,6 +265,7 @@ class _AboutPageState extends State<AboutPage> {
   }
 
   Widget _buildDedicationCard(bool isDark) {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -273,7 +274,7 @@ class _AboutPageState extends State<AboutPage> {
         borderRadius: BorderRadius.circular(24),
       ),
       child: Text(
-        "This application is dedicated to every soul who desires to learn the sacred teachings of the Ethiopian Orthodox Tewahedo Church.\n\nAll glory belongs to God Almighty.\n\nSpecial thanks to all who preserved these teachings.\n\n© 2026 Mezgebe Sibhat",
+        l10n.dedication,
         style: TextStyle(
           height: 1.6,
           color: isDark ? Colors.white60 : Colors.black87,
@@ -304,6 +305,7 @@ class _AboutPageState extends State<AboutPage> {
   }
 
   Widget _buildImagePicker(ThemeData theme) {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         InkWell(
@@ -329,8 +331,8 @@ class _AboutPageState extends State<AboutPage> {
                 const SizedBox(width: 12),
                 Text(
                   _selectedImage == null
-                      ? "Attach Screenshot"
-                      : "Change Screenshot",
+                      ? l10n.attachScreenshot
+                      : l10n.changeScreenshot,
                 ),
               ],
             ),
@@ -379,8 +381,8 @@ class _AboutPageState extends State<AboutPage> {
   void _submit(SongState songState) {
     if (!songState.connectionEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("No internet connection"),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.noInternet),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -400,8 +402,8 @@ class _AboutPageState extends State<AboutPage> {
 
   void _showSuccess() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Feedback sent!'),
+      SnackBar(
+        content: Text(AppLocalizations.of(context)!.feedbackSent),
         backgroundColor: Colors.green,
       ),
     );
